@@ -29,6 +29,7 @@
 #include "rendering/render_buffer.h"
 #include "rendering/transparent_renderer.h"
 #include "rendering/uniform_buffer_object.h"
+#include "shadow/shadow_renderer.h"
 #include "utils/config.h"
 
 #pragma endregion
@@ -84,6 +85,7 @@ void render_debug_windows();
 #pragma region utility variables
 
 const unsigned int ASTEROID_COUNT = 1000;
+const unsigned int SHADOW_RESOLUTION = 2048;
 
 
 camera cam = camera(45.0f, 0.1f, 200.0f);
@@ -117,15 +119,15 @@ point_light point_lights[4];
 directional_light dir_light;
 spot_light spotlight;
 
-std::vector<light> lights;
-std::vector<game_object> game_objects;
+std::vector<light*> lights;
+std::vector<game_object*> game_objects;
 
 material cube_mat;
 
 
 //textures
 const unsigned int SAMPLES = 8;
-texture ms_color_tex, ms_depth_tex;
+texture ms_color_tex, ms_depth_tex, shadow_depth_tex;
 
 texture random_fb_color_tex, random_fb_depth_tex, random_fb_stencil_tex, random_fb_depth_stencil_tex;
 texture container_diff_tex;
@@ -133,6 +135,8 @@ texture skybox_tex;
 
 renderer cube_renderer, screen_space_quad_renderer, rear_quad_renderer, skybox_renderer, floor_renderer;
 transparent_renderer quad_renderer;
+
+shadow_renderer floor_shadow_renderer;
 
 uniform_buffer_object vp_ubo;
 
@@ -352,17 +356,6 @@ int main()
 
 #pragma endregion
 
-	#pragma region OpenGL Object Declarations
-
-	unsigned int basic_vbo;
-	unsigned int basic_vao;
-	unsigned int basic_ebo;
-
-	unsigned int light_vbo;
-	unsigned int light_vao;
-
-	#pragma endregion
-
 	#pragma region Shaders
 
 	// *********** shaders *****************
@@ -390,6 +383,9 @@ int main()
 	shader asteroid_shader_vertex = shader("asteroid_v", GL_VERTEX_SHADER);
 	shader asteroid_shader_pixel =  shader("asteroid_p", GL_FRAGMENT_SHADER);
 
+	shader shadow_shader_vertex = shader("simple_depth_v", GL_VERTEX_SHADER);
+	shader shadow_shader_pixel = shader("simple_depth_p", GL_FRAGMENT_DEPTH);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program light_shader_program = shader_program(&light_shader_vertex, &light_shader_pixel);
@@ -399,12 +395,13 @@ int main()
 	shader_program skybox_shader_program = shader_program(&skybox_shader_vertex, &skybox_shader_pixel);
 	shader_program planet_shader_program = shader_program(&planet_shader_vertex, &planet_shader_pixel);
 	shader_program asteroid_shader_program = shader_program(&asteroid_shader_vertex, &asteroid_shader_pixel);
+	shader_program shadow_shader_program = shader_program(&shadow_shader_vertex, &shadow_shader_pixel);
 	
 	#pragma endregion
 
 	#pragma region Colors, Textures, Materials & Meshes
 
-	ambient_color = color(0.4f, 0.4f, 0.4f, 1.0f);
+	ambient_color = color(0.1f, 0.1f, 0.1f, 1.0f);
 
 	//textures
 	container_diff_tex = texture(get_tex("container2_diffuse.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
@@ -433,10 +430,9 @@ int main()
 
 	ms_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
 
+	shadow_depth_tex = texture(texture_type::depth, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 
-	
 
-	
 	skybox_tex = texture(skybox_texture_paths, texture_type::reflection, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE);
 	
 	//materials
@@ -487,11 +483,13 @@ int main()
 	rear_quad_renderer = renderer(std::make_shared<mesh>(rear_quad_mesh));
 	floor_renderer = renderer(std::make_shared<mesh>(floor_mesh));
 
+	floor_shadow_renderer = shadow_renderer(std::make_shared<mesh>(floor_mesh));
+
 	model nanosuit = model("res/models/nanosuit2/scene.gltf", false);
 	nanosuit.load("res/models/nanosuit2/scene.gltf");
 
 
-	srand(glfwGetTime());
+	srand(static_cast<unsigned int>(glfwGetTime()));
 	float radius = 50.0f;
 	float offset = 70.f;
 
@@ -507,11 +505,11 @@ int main()
 		float z = cos(angle) * radius + displacement;
 		m = glm::translate(m, glm::vec3(x, y, z));
 
-		float scale = rand() % 20 / 100.0f + 0.05;
+		float scale = rand() % 20 / 100.0f + 0.05f;
 		m = glm::scale(m, glm::vec3(scale));
 
 		// 3. rotation: add random rotation around a (semi)randomly picked rotation axis vector
-		float rot_angle = (rand() % 360);
+		float rot_angle = static_cast<float>(rand() % 360);
 		m = glm::rotate(m, rot_angle, glm::vec3(0.4f, 0.6f, 0.8f));
 
 		asteroid_model_matrices[i] = m;
@@ -524,18 +522,17 @@ int main()
 
 	#pragma region FrameBuffers and RenderBuffers and Uniform Buffer Objects
 
+	//multi sampling
 	frame_buffer ms_fb = frame_buffer();
 
 	ms_fb.bind();
-
 	frame_buffer::attach_texture_2d(ms_color_tex.get_id(), GL_COLOR_ATTACHMENT0, true);
 	frame_buffer::attach_texture_2d(ms_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, true);
-
-	std::cout << "frame buffer with multi sampled color and depth texture " << ms_fb.validate() << std::endl;;
+	std::cout << "frame buffer with multi sampled color and depth texture " << frame_buffer::validate() << std::endl;;
 	frame_buffer::unbind();
+
 	
 	frame_buffer random_fb = frame_buffer();
-
 	random_fb.bind();
 	frame_buffer::attach_texture_2d(random_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
 	frame_buffer::attach_texture_2d(random_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
@@ -546,8 +543,17 @@ int main()
 
 	//frame_buffer::attach_render_buffer(rb.get_id(), GL_DEPTH_STENCIL_ATTACHMENT, false);
 
-	frame_buffer::unbind();
+	frame_buffer::unbind(); // random_fb
 
+	frame_buffer shadow_fb = frame_buffer();
+	shadow_fb.bind();
+
+	frame_buffer::attach_texture_2d(shadow_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	std::cout << "shadow frame buffer with depth texture " << frame_buffer::validate() << std::endl;;
+	frame_buffer::unbind(); // shadow fb
+	
 	vp_ubo = uniform_buffer_object(2 * sizeof(glm::mat4), GL_STATIC_DRAW);
 
 	//bind ubo to binding point 1
@@ -573,7 +579,7 @@ int main()
 		cubes[i] = game_object();
 		cubes[i].set_name("cube_" + std::to_string(i));
 		cubes[i].get_transform()->set_position(cube_positions[i]);
-		game_objects.push_back(cubes[i]);
+		game_objects.push_back(&cubes[i]);
 	}
 
 	for (int i = 0; i < 5; i++)
@@ -581,24 +587,25 @@ int main()
 		quads[i] = game_object();
 		quads[i].set_name("grass" + std::to_string(i));
 		quads[i].get_transform()->set_position(grass_positions[i]);
-		game_objects.push_back(quads[i]);
+		game_objects.push_back(&quads[i]);
 	}
 
 	dir_light = directional_light();
 	dir_light.set_name("directional_light");
-	dir_light.get_transform()->set_position(glm::vec3(0, 2, 2));
+	dir_light.get_transform()->set_position(glm::vec3(0, 1, 4));
 	dir_light.diff_intensity = 0.5f;
-	game_objects.push_back(dir_light);
-	lights.push_back(dir_light);
+	game_objects.push_back(&dir_light);
+	lights.push_back(&dir_light);
 	
 	for (size_t i = 0; i < 4 ; i++)
 	{
 		point_lights[i].get_transform()->set_position(point_light_positions[i]);
 		point_lights[i].linear = 0.09f;
 		point_lights[i].quadratic = 0.032f;
+		point_lights[i].is_active = false;
 		point_lights[i].set_name(std::string("point_light_").append(std::to_string(i)));
-		game_objects.push_back(point_lights[i]);
-		lights.push_back(point_lights[i]);
+		game_objects.push_back(&point_lights[i]);
+		lights.push_back(&point_lights[i]);
 	}
 
 	spotlight = spot_light();
@@ -608,8 +615,8 @@ int main()
 	spotlight.diff_intensity = 1.0f;
 	
 	spotlight.set_name("spot_light");
-	lights.push_back(spotlight);
-	game_objects.push_back(spotlight);
+	lights.push_back(&spotlight);
+	game_objects.push_back(&spotlight);
 
 	
 	#pragma endregion
@@ -618,13 +625,46 @@ int main()
 
 	while(!glfwWindowShouldClose(window))
 	{
+		process_input(window);
+
+		glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
+		shadow_fb.bind();
+
+		clear_depth_buffer();
+
+		mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
+		mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
+		
+		glm::mat4 model_matrix = glm::mat4(1);
+		model_matrix = glm::translate(model_matrix, glm::vec3(0, -0, 0));
+		model_matrix = glm::scale(model_matrix, glm::vec3(0.1f, 0.1f, 0.1f));
+		mvp_matrix.model_matrix = model_matrix;
+		
+		shadow_shader_program.use();
+		shadow_shader_program.set_mvp(mvp_matrix);
+
+		glCullFace(GL_FRONT);
+		nanosuit.draw_shadow(shadow_shader_program);
+		glCullFace(GL_BACK);
+
+
+		mvp_matrix.model_matrix = glm::mat4(1);
+		mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
+		mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
+		mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
+		shadow_shader_program.set_mvp(mvp_matrix);
+		floor_shadow_renderer.draw(shadow_shader_program);
+		
+		frame_buffer::unbind();
+
+		glViewport(0, 0, config::WIDTH, config::HEIGHT);
+		
 		ms_fb.bind();
 		
 		clear_color_buffer();
 		clear_depth_buffer();
 		clear_stencil_buffer();
 
-		process_input(window);
 
 		set_depth_testing(true);
 		set_stencil_testing(true);
@@ -641,7 +681,7 @@ int main()
 		//render_planet(planet, planet_shader_program);
 		//render_asteroids(asteroid, asteroid_shader_program);
 		render_skybox(skybox_renderer, skybox_shader_program);
-		render_transparent_quads(quad_renderer, transparent_shader_program);
+		//render_transparent_quads(quad_renderer, transparent_shader_program);
 		//render_model_outline(backpack, outline_shader_program);
 		
 		
@@ -753,17 +793,22 @@ void set_stencil_writing(const bool flag)
 
 void render_light_sources(const renderer& rend, const shader_program& light_shader_program)
 {
-	for (light& light : lights)
+	//std::cout << "Dir light is active? " << (dir_light.is_active ? "true" : "false") << std::endl;
+	
+ 	for (int i = 0; i < 4; i++)
 	{
 		light_shader_program.use();
 
-		if (light.get_name() == "spot_light")
+		light& l = (*lights[i]);
+ 		
+		if (l.get_name() == "spot_light" || !l.is_active)
 			continue;
+		
 		glm::mat4 light_model_matrix = glm::mat4(1);
-		light_model_matrix = glm::translate(light_model_matrix, light.get_transform()->position());
+		light_model_matrix = glm::translate(light_model_matrix, l.get_transform()->position());
 		light_model_matrix = glm::scale(light_model_matrix, glm::vec3(0.1f));
 
-		light_shader_program.set_vec3("color", light.diffuse.to_vec3());
+		light_shader_program.set_vec3("color", l.diffuse.to_vec3());
 		mvp_matrix.model_matrix = light_model_matrix;
 		light_shader_program.set_mvp(mvp_matrix);
 
@@ -788,14 +833,23 @@ void render_model(model &m, const shader_program &program)
 	
 
 	glm::mat4 model_matrix = glm::mat4(1);
-	model_matrix = glm::translate(model_matrix, glm::vec3(0, -4, 0));
+	model_matrix = glm::translate(model_matrix, glm::vec3(0, 0, 0));
 	model_matrix = glm::scale(model_matrix, glm::vec3(0.1f, 0.1f, 0.1f));
 	mvp_matrix.model_matrix = model_matrix;
 	program.set_mvp(mvp_matrix);
 
+	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
+	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
+
 	glActiveTexture(GL_TEXTURE8);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_tex.get_id());
 	program.set_int("mat.reflectionTexture0", 8);
+
+	glActiveTexture(GL_TEXTURE7);
+	glBindTexture(GL_TEXTURE_2D, shadow_depth_tex.get_id());
+	program.set_int("mat.shadowMap0", 7);
+
+	program.set_float("shouldReceiveShadow", 0);
 
 	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	glStencilFunc(GL_ALWAYS, 1, 0xFF);
@@ -884,15 +938,23 @@ void render_floor(const renderer& rend, const shader_program& program)
 	send_material_data_to_shader(program);
 
 	mvp_matrix.model_matrix = glm::mat4(1);
-	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, -4, 0));
+	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
 	mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians( -90.0f), glm::vec3(1, 0, 0));
 	mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
 	program.set_mvp(mvp_matrix);
 	program.set_vec3("tiling", glm::vec3(5));
 
+	glActiveTexture(GL_TEXTURE7);
+	glBindTexture(GL_TEXTURE_2D, shadow_depth_tex.get_id());
+	program.set_int("mat.shadowMap0", 7);
+
+	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
+	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
+
+	program.set_float("shouldReceiveShadow", 1.0f);
+
 	rend.draw(program);
 }
-
 
 void render_transparent_quads(const renderer& rend, const shader_program& program)
 {
@@ -946,7 +1008,6 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	rend.draw(program);
 }
 
-
 void render_debug_windows()
 {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -960,6 +1021,7 @@ void render_debug_windows()
 
 	const ImTextureID color_tex_id = reinterpret_cast<void*>(random_fb_color_tex.get_id());  // NOLINT(misc-misplaced-const)
 	const ImTextureID depth_tex_id = reinterpret_cast<void*>(random_fb_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID shadow_tex_id = reinterpret_cast<void*>(shadow_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
@@ -976,25 +1038,32 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
+	if(ImGui::TreeNode("Shadow"))
+	{
+		ImGui::Image(shadow_tex_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
 
 	ImGui::End();
-
 
 	ImGui::Begin("Lights");
 	if (ImGui::TreeNode("Basic Lights"))
 	{
 		for (size_t i = 0; i < lights.size(); i++)
 		{
-			if (ImGui::TreeNode(lights[i].get_name().c_str()))
+			light& l = *lights[i];
+			
+			if (ImGui::TreeNode(l.get_name().c_str()))
 			{
-				ImGui::DragFloat3("position", &(lights[i].get_transform()->position_ptr()->x), 0.1f);
-				ImGui::ColorEdit4("diffuse", &(lights[i].diffuse.r));
-				ImGui::ColorEdit4("specular", &(lights[i].specular.r));
+				ImGui::Checkbox("Enabled", &(l.is_active));
+				ImGui::DragFloat3("position", &(l.get_transform()->position_ptr()->x), 0.1f);
+				ImGui::ColorEdit4("diffuse", &(l.diffuse.r));
+				ImGui::ColorEdit4("specular", &(l.specular.r));
 
 				ImGui::Spacing();
 
-				ImGui::DragFloat("specular intensity", &(lights[i].spec_intensity));
-				ImGui::DragFloat("diffuse intensity", &(lights[i].diff_intensity));
+				ImGui::DragFloat("specular intensity", &(l.spec_intensity));
+				ImGui::DragFloat("diffuse intensity", &(l.diff_intensity));
 				ImGui::TreePop();
 			}
 		}
@@ -1029,6 +1098,11 @@ void send_dir_light_to_shader(const shader_program& program)
 		program.set_float("dirLight.diffuseIntensity", dir_light.diff_intensity);
 		program.set_float("dirLight.specularIntensity", dir_light.spec_intensity);
 	}
+	else
+	{
+		program.set_vec3("dirLight.specularColor", dir_light.specular.to_vec3() * 0.0f);
+		program.set_vec3("dirLight.diffuseColor", dir_light.diffuse.to_vec3() * 0.0f);
+	}
 }
 
 void send_point_lights_to_shader(const shader_program& program)
@@ -1053,6 +1127,15 @@ void send_point_lights_to_shader(const shader_program& program)
 			program.set_float(std::string(str + "linear", j), point_lights[j].linear);
 
 			program.set_float(std::string(str + "quadratic", j), point_lights[j].quadratic);
+		}
+		else
+		{
+			std::string  str = "pointLights[";
+			str.append(std::to_string(j));
+			str.append("].");
+
+			program.set_vec3(std::string(str + "specularColor", j), point_lights[j].specular.to_vec3() * 0.0f);
+			program.set_vec3(std::string(str + "diffuseColor", j), point_lights[j].diffuse.to_vec3() * 0.0f);
 		}
 	}
 }
@@ -1227,8 +1310,8 @@ void mouse_callback(GLFWwindow* window, const double x_pos, const double y_pos)
 
 	transform* transform = cam.get_transform();
 	glm::vec3 rot = transform->rotation();
-	rot.x += y_delta;
-	rot.y += x_delta;
+	rot.x += static_cast<float>(y_delta);
+	rot.y += static_cast<float>(x_delta);
 
 	if (rot.x > 89.0f)
 		rot.x = 89.0f;

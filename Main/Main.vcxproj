@@ -183,6 +183,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClCompile Include="src\cpp\rendering\texture.cpp" />
     <ClCompile Include="src\cpp\rendering\transparent_renderer.cpp" />
     <ClCompile Include="src\cpp\rendering\uniform_buffer_object.cpp" />
+    <ClCompile Include="src\cpp\shadow\shadow_renderer.cpp" />
     <ClCompile Include="src\cpp\stb_image.cpp" />
     <ClCompile Include="src\cpp\utils\config.cpp" />
     <ClCompile Include="src\glad\glad.c" />
@@ -195,6 +196,23 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClCompile Include="src\Source.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="res\shaders\pixel\asteroid_p.glsl" />
+    <None Include="res\shaders\pixel\basic_p.glsl" />
+    <None Include="res\shaders\pixel\light_p.glsl" />
+    <None Include="res\shaders\pixel\outline_p.glsl" />
+    <None Include="res\shaders\pixel\planet_p.glsl" />
+    <None Include="res\shaders\pixel\screen_space_p.glsl" />
+    <None Include="res\shaders\pixel\skybox_p.glsl" />
+    <None Include="res\shaders\pixel\transparent_p.glsl" />
+    <None Include="res\shaders\vertex\asteroid_v.glsl" />
+    <None Include="res\shaders\vertex\basic_v.glsl" />
+    <None Include="res\shaders\vertex\light_v.glsl" />
+    <None Include="res\shaders\vertex\outline_v.glsl" />
+    <None Include="res\shaders\vertex\planet_v.glsl" />
+    <None Include="res\shaders\vertex\screen_space_v.glsl" />
+    <None Include="res\shaders\vertex\simple_depth_v.glsl" />
+    <None Include="res\shaders\vertex\skybox_v.glsl" />
+    <None Include="res\shaders\vertex\transparent_v.glsl" />
     <None Include="src\shaders\pixel\basic_p.glsl" />
     <None Include="src\shaders\pixel\light_p.glsl" />
     <None Include="src\shaders\pixel\outline_p.glsl" />
@@ -213,6 +231,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="src\shaders\pixel\transparent_p.glsl" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="res\shaders\pixel\simple_depth_p.glsl" />
     <ClInclude Include="src\headers\data\kernel3.h" />
     <ClInclude Include="src\headers\data\mesh.h" />
     <ClInclude Include="src\headers\data\model.h" />
@@ -234,6 +253,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClInclude Include="src\headers\rendering\texture.h" />
     <ClInclude Include="src\headers\rendering\transparent_renderer.h" />
     <ClInclude Include="src\headers\rendering\uniform_buffer_object.h" />
+    <ClInclude Include="src\headers\shadow\shadow_renderer.h" />
     <ClInclude Include="src\headers\texture_type.h" />
     <ClInclude Include="src\headers\data\vertex.h" />
     <ClInclude Include="src\headers\rendering\shader.h" />

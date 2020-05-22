@@ -35,7 +35,7 @@ void renderer::draw(const shader_program &program) const
 	std::string texture_type_str;
 	std::string number;
 	
-	for (size_t i = 0; i < mesh_ptr->textures.size(); i++)
+	for (int i = 0; i < mesh_ptr->textures.size(); i++)
 	{
 		setting_name.clear();
 		setting_name.append("mat.");
@@ -112,7 +112,7 @@ void renderer::draw_instanced(const shader_program& program, const unsigned int 
 	std::string texture_type_str;
 	std::string number;
 
-	for (size_t i = 0; i < mesh_ptr->textures.size(); i++)
+	for (int i = 0; i < mesh_ptr->textures.size(); i++)
 	{
 		setting_name.clear();
 		setting_name.append("mat.");
@@ -202,7 +202,7 @@ void renderer::draw_with_indices() const
 		glDisable(GL_BLEND);
 	
 	glBindVertexArray(vao);
-	glDrawElements(GL_TRIANGLES, mesh_ptr->indices.size(), GL_UNSIGNED_INT, nullptr);
+	glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh_ptr->indices.size()), GL_UNSIGNED_INT, nullptr);
 	glBindVertexArray(0);
 
 	glDisable(GL_BLEND);
@@ -216,7 +216,7 @@ void renderer::draw_with_raw_vertices() const
 		glDisable(GL_BLEND);
 	
 	glBindVertexArray(vao);
-	glDrawArrays(GL_TRIANGLES, 0, mesh_ptr->vertices.size());
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh_ptr->vertices.size()));
 	glBindVertexArray(0);
 
 	glDisable(GL_BLEND);
@@ -230,7 +230,7 @@ void renderer::draw_with_indices_instanced(const unsigned int count) const
 		glDisable(GL_BLEND);
 
 	glBindVertexArray(vao);
-	glDrawElementsInstanced(GL_TRIANGLES, mesh_ptr->indices.size(), GL_UNSIGNED_INT, nullptr, count );
+	glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(mesh_ptr->indices.size()), GL_UNSIGNED_INT, nullptr, count );
 	glBindVertexArray(0);
 
 	glDisable(GL_BLEND);
@@ -244,7 +244,7 @@ void renderer::draw_with_raw_vertices_instanced(const unsigned count) const
 		glDisable(GL_BLEND);
 
 	glBindVertexArray(vao);
-	glDrawArraysInstanced(GL_TRIANGLES, 0, mesh_ptr->vertices.size(), count);
+	glDrawArraysInstanced(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh_ptr->vertices.size()), count);
 	glBindVertexArray(0);
 
 	glDisable(GL_BLEND);

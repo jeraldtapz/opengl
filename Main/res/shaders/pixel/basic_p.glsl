@@ -2,11 +2,15 @@
 
 #define NR_PT_LIGHTS 4
 
+float when_gt(float x, float y);
+float when_lt(float x, float y);
+
 struct Material
 {
 	sampler2D diffuseTexture0;
 	sampler2D specularTexture0;
 	sampler2D normalTexture0;
+	sampler2D shadowMap0;
 	samplerCube reflectionTexture0;
 
 	vec3 specularColor;
@@ -63,11 +67,13 @@ vec3 CalculateDirectionalLight();
 vec3 CalculatePointLight(PointLight light);
 vec3 CalculateSpotLightContrib(SpotLight light);
 vec3 CalculateReflectionContrib();
-float when_gt(float x, float y);
+float CalculateShadow();
+
 
 in vec3 FragPos;
 in vec2 TexCoord;
 in vec3 Normal;
+in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
 
@@ -80,6 +86,7 @@ uniform vec3 viewPos;
 uniform vec3 ambientColor;
 uniform float time;
 uniform float isFlashlightOn;
+uniform float shouldReceiveShadow;
 uniform vec3 tiling;
 
 void main()
@@ -96,8 +103,9 @@ void main()
 	vec3 spotLightContrib = CalculateSpotLightContrib(spotLight) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 //	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
+	float shadow = CalculateShadow();
 
-	FragColor =  vec4(pointLightContrib + dirLightContrib + spotLightContrib + ambientContrib, diffColor.a);
+	FragColor =  vec4((1 - shadow*shouldReceiveShadow) * (pointLightContrib + dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
 }
 
 vec3 CalculateDirectionalLight()
@@ -184,7 +192,42 @@ vec3 CalculateReflectionContrib()
 	return texture(mat.reflectionTexture0, reflected).rgb;
 }
 
+float CalculateShadow()
+{
+	vec3 lightSpacePosProj = FragPosLightSpace.xyz/FragPosLightSpace.w;
+	lightSpacePosProj = lightSpacePosProj * 0.5 + 0.5;
+
+	float closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy).r;
+	float currentDepth = lightSpacePosProj.z;
+	vec3 normal = normalize(Normal);
+	vec3 fragToLight = normalize(-dirLight.lightDir);
+
+	float bias = max(0.0005 * (1.0 - dot(normal, fragToLight)), 0.00005);
+
+	vec2 texelSize = 1.0/textureSize(mat.shadowMap0, 0);
+	const int halfKernelWidth = 2;
+	float shadow = 0;
+
+	for(int i = -halfKernelWidth; i <= halfKernelWidth; i++)
+	{
+		for(int j = -halfKernelWidth; j <= halfKernelWidth; j++)
+		{
+			closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy + vec2(i, j) * texelSize).r;
+			shadow += when_gt(currentDepth - bias, closestDepth);
+		}
+	}
+
+	shadow /= ((halfKernelWidth * 2 + 1) * (halfKernelWidth * 2 + 1));
+
+	return shadow;
+}
+
 float when_gt(float x, float y)
 {
   return max(sign(x - y), 0.0f);
+}
+
+float when_lt(float x, float y)
+{
+  return max(sign(y - x), 0.0f);
 }

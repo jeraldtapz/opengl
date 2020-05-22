@@ -111,6 +111,9 @@
     <ClCompile Include="src\cpp\rendering\instanced_renderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\cpp\shadow\shadow_renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\pixel\basic_p.glsl" />
@@ -131,6 +134,23 @@
     <None Include="src\shaders\vertex\asteroid_v.glsl" />
     <None Include="src\shaders\vertex\planet_v.glsl" />
     <None Include="src\shaders\pixel\planet_p.glsl" />
+    <None Include="res\shaders\vertex\asteroid_v.glsl" />
+    <None Include="res\shaders\vertex\basic_v.glsl" />
+    <None Include="res\shaders\vertex\light_v.glsl" />
+    <None Include="res\shaders\vertex\outline_v.glsl" />
+    <None Include="res\shaders\vertex\planet_v.glsl" />
+    <None Include="res\shaders\vertex\screen_space_v.glsl" />
+    <None Include="res\shaders\vertex\skybox_v.glsl" />
+    <None Include="res\shaders\vertex\transparent_v.glsl" />
+    <None Include="res\shaders\pixel\transparent_p.glsl" />
+    <None Include="res\shaders\pixel\asteroid_p.glsl" />
+    <None Include="res\shaders\pixel\basic_p.glsl" />
+    <None Include="res\shaders\pixel\light_p.glsl" />
+    <None Include="res\shaders\pixel\outline_p.glsl" />
+    <None Include="res\shaders\pixel\planet_p.glsl" />
+    <None Include="res\shaders\pixel\screen_space_p.glsl" />
+    <None Include="res\shaders\pixel\skybox_p.glsl" />
+    <None Include="res\shaders\vertex\simple_depth_v.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">
@@ -236,6 +256,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\headers\rendering\instanced_renderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="res\shaders\pixel\simple_depth_p.glsl">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\headers\shadow\shadow_renderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
