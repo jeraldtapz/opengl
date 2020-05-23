@@ -92,6 +92,8 @@ uniform float shouldReceiveShadow;
 uniform vec3 tiling;
 uniform samplerCube pointShadowMap;
 uniform float farPlane;
+uniform float useShadow;
+uniform float useNormalMaps;
 
 void main()
 {
@@ -107,15 +109,13 @@ void main()
 	vec3 spotLightContrib = CalculateSpotLightContrib(spotLight) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 //	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
-	float pointShadow = CalculatePointShadow();
-	float dirShadow = CalculateDirectionalShadow();
+	float pointShadow = CalculatePointShadow() * useShadow;
+	float dirShadow = CalculateDirectionalShadow() * useShadow;
 
 	vec3 fragToLight = FragPos - pointLights[0].lightPos;
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
-//	closestDepth *= farPlane;
 
 	FragColor =  vec4(((1 - pointShadow) * pointLightContrib + (1 - dirShadow) * dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
-
 //	FragColor =  vec4((1 - pointShadow) * (pointLightContrib + dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
 //	FragColor = vec4(vec3(closestDepth), 1.0);
 }
@@ -126,8 +126,9 @@ vec3 CalculateDirectionalLight()
 	normal = normal * 2 - 1.0;
 	normal = normalize(TBN * normal);
 
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+
 	vec3 fragToLight = -dirLight.lightDir;
-	normal = normalize(Normal);
 
 	vec3 fragToView = normalize(viewPos - FragPos);
 	vec3 reflectedLightDir = reflect(dirLight.lightDir, normal);
@@ -153,7 +154,8 @@ vec3 CalculatePointLight(PointLight light)
 	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normal * 2 - 1.0;
 	normal = normalize(TBN * normal);
-	normal = normalize(Normal);
+
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
 
 	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
@@ -183,7 +185,6 @@ vec3 CalculateSpotLightContrib(SpotLight light)
 	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normalize(normal * 2 - 1.0);
 	normal = normalize(TBN * normal);
-	normal = normalize(Normal);
 	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
 	vec3 fragToView = normalize(viewPos - FragPos);
@@ -257,10 +258,13 @@ float CalculatePointShadow()
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
 	closestDepth *= farPlane;
 
-	vec3 normal = texture(mat.normalTexture0, TexCoord).rgb;
+	vec3 normal = texture(mat.normalTexture0, 
+	vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
-	normal = normalize(Normal);
+//	normal = normalize(TBN * normal);
+//	normal = normalize(Normal);
+
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
 
 	float bias = max(0.05 * (1.0 - dot(normal, normalize(fragToLight))), 0.005);
 	float currentDepth = length(fragToLight);

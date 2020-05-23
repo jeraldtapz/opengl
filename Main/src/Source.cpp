@@ -102,10 +102,13 @@ int cursor_mode = GLFW_CURSOR_NORMAL;
 bool first_mouse;
 bool is_flash_light_on = false;
 bool is_open;
+bool use_shadow = true;
+bool use_normal_maps = true;
 
 color ambient_color;
 std::map<float, transform> sorted;
 mvp mvp_matrix;
+mvp mvp_loaded_model;
 glm::mat4* asteroid_model_matrices = new glm::mat4[ASTEROID_COUNT];
 
 //glfw
@@ -133,6 +136,8 @@ texture random_fb_color_tex, random_fb_depth_tex, random_fb_stencil_tex, random_
 texture container_diff_tex;
 texture skybox_tex;
 
+texture floor_normal_tex;
+
 renderer cube_renderer, screen_space_quad_renderer, rear_quad_renderer, skybox_renderer, floor_renderer;
 transparent_renderer quad_renderer;
 
@@ -154,7 +159,6 @@ std::string skybox_texture_paths[] =
 };
 
 #pragma endregion 
-
 
 int main()
 {
@@ -219,21 +223,88 @@ int main()
 
 	std::vector<vertex> quad_vertices = 
 	{
-		vertex(-1.0f, 1.0f, 0) , // top left
-		vertex(-1.0f, -1.0f, 0), // bottom left
-		vertex(1.0f, -1.0f, 0), // bottom right
-		vertex(1.0f, 1.0f, 0) // top right
+		vertex(-1.0f, 1.0f, 0) , 
+		vertex(-1.0f, -1.0f, 0),
+		vertex(1.0f, -1.0f, 0),
+
+		vertex(-1.0f, 1.0f, 0),
+		vertex(1.0f, -1.0f, 0),
+		vertex(1.0f, 1.0f, 0),
 	};
 
 	quad_vertices[0].tex_coord = glm::vec2(0, 1);
 	quad_vertices[1].tex_coord = glm::vec2(0, 0);
 	quad_vertices[2].tex_coord = glm::vec2(1, 0);
-	quad_vertices[3].tex_coord = glm::vec2(1, 1);
+	quad_vertices[3].tex_coord = glm::vec2(0, 1);
+	quad_vertices[4].tex_coord = glm::vec2(1, 0);
+	quad_vertices[5].tex_coord = glm::vec2(1, 1);
+	
 
 	quad_vertices[0].normal = glm::vec3(0, 0, 1);
 	quad_vertices[1].normal = glm::vec3(0, 0, 1);
 	quad_vertices[2].normal = glm::vec3(0, 0, 1);
 	quad_vertices[3].normal = glm::vec3(0, 0, 1);
+	quad_vertices[4].normal = glm::vec3(0, 0, 1);
+	quad_vertices[5].normal = glm::vec3(0, 0, 1);
+
+	//triangle 1 *****************************************************************************
+	
+	glm::vec3 edge1 = quad_vertices[1].position - quad_vertices[0].position;
+	glm::vec3 edge2 = quad_vertices[2].position - quad_vertices[0].position;
+	glm::vec2 delta_uv1 = quad_vertices[1].tex_coord - quad_vertices[0].tex_coord;
+	glm::vec2 delta_uv2 = quad_vertices[2].tex_coord - quad_vertices[0].tex_coord;
+
+	float f = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv2.x * delta_uv1.y);
+
+	quad_vertices[0].tangent.x = f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x);
+	quad_vertices[0].tangent.y = f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y);
+	quad_vertices[0].tangent.z = f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z);
+	quad_vertices[0].tangent = glm::normalize(quad_vertices[0].tangent);
+
+	quad_vertices[1].tangent = quad_vertices[0].tangent;
+	quad_vertices[2].tangent = quad_vertices[0].tangent;
+
+	quad_vertices[0].bitangent.x = f * (-delta_uv2.x * edge1.x + delta_uv1.x * edge2.x);
+	quad_vertices[0].bitangent.y = f * (-delta_uv2.x * edge1.y + delta_uv1.x * edge2.y);
+	quad_vertices[0].bitangent.z = f * (-delta_uv2.x * edge1.z + delta_uv1.x * edge2.z);
+	quad_vertices[0].bitangent = glm::normalize(quad_vertices[0].bitangent);
+
+	quad_vertices[1].bitangent = quad_vertices[0].bitangent;
+	quad_vertices[2].bitangent = quad_vertices[0].bitangent;
+	
+
+	//triangle 1 *****************************************************************************
+
+	//triangle 2 *****************************************************************************
+
+	// 0 == 3
+	// 2 == 4
+	// 
+	
+	edge1 = quad_vertices[2].position - quad_vertices[0].position;
+	edge2 = quad_vertices[5].position - quad_vertices[0].position;
+	delta_uv1 = quad_vertices[2].tex_coord - quad_vertices[0].tex_coord;
+	delta_uv2 = quad_vertices[5].tex_coord - quad_vertices[0].tex_coord;
+
+	f = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv2.x * delta_uv1.y);
+
+	quad_vertices[3].tangent.x = f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x);
+	quad_vertices[3].tangent.y = f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y);
+	quad_vertices[3].tangent.z = f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z);
+	quad_vertices[3].tangent = glm::normalize(quad_vertices[3].tangent);
+
+	quad_vertices[4].tangent = quad_vertices[3].tangent;
+	quad_vertices[5].tangent = quad_vertices[3].tangent;
+
+	quad_vertices[3].bitangent.x = f * (-delta_uv2.x * edge1.x + delta_uv1.x * edge2.x);
+	quad_vertices[3].bitangent.y = f * (-delta_uv2.x * edge1.y + delta_uv1.x * edge2.y);
+	quad_vertices[3].bitangent.z = f * (-delta_uv2.x * edge1.z + delta_uv1.x * edge2.z);
+	quad_vertices[3].bitangent = glm::normalize(quad_vertices[3].bitangent);
+
+	quad_vertices[4].bitangent = quad_vertices[3].bitangent;
+	quad_vertices[5].bitangent = quad_vertices[3].bitangent;
+
+	//triangle 2 *****************************************************************************
 
 	std::vector<vertex> rear_quad_vertices =
 	{
@@ -351,9 +422,6 @@ int main()
 		glm::vec3(0.5f, 0.0f, -0.6f)
 	};
 
-	
-	
-
 #pragma endregion
 
 	#pragma region Shaders
@@ -408,7 +476,6 @@ int main()
 
 	ambient_color = color(0.1f, 0.1f, 0.1f, 1.0f);
 
-	//textures
 	container_diff_tex = texture(get_tex("container2_diffuse.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
 	const texture wall_tex = texture(get_tex("liza.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
 
@@ -421,7 +488,7 @@ int main()
 	texture window_tex = texture(get_tex("window.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
 
 	texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	texture floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, false);
+	floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
 
 	texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
 
@@ -441,15 +508,14 @@ int main()
 	point_shadow_depth_tex = texture(texture_type::cube, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 
 
-	skybox_tex = texture(skybox_texture_paths, texture_type::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE);
+	skybox_tex = texture(skybox_texture_paths, texture_type::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
 	
 	//materials
 	cube_mat = material(color::WHITE, color::WHITE);
 
 
-	//meshes
 	std::vector<texture> cube_textures = { container_diff_tex, container_spec_tex };
-	mesh cube_mesh = mesh(cube_vertices);
+	mesh cube_mesh = mesh(cube_vertices, cube_textures);
 	cube_mesh.is_indexed = false;
 	cube_mesh.should_cull_face = false;
 
@@ -462,22 +528,22 @@ int main()
 	std::vector<texture> quad_textures = { window_tex };
 	mesh transparent_quad_mesh = mesh(quad_vertices, quad_indices, quad_textures);
 	transparent_quad_mesh.is_transparent = true;
-	transparent_quad_mesh.is_indexed = true;
+	transparent_quad_mesh.is_indexed = false;
 	transparent_quad_mesh.should_cull_face = false;
 
 	std::vector<texture> floor_textures = { floor_tex ,floor_spec_tex , floor_normal_tex };
-	mesh floor_mesh = mesh(quad_vertices, quad_indices, floor_textures);
-	floor_mesh.is_indexed = true;
-	floor_mesh.should_cull_face = true;
+	mesh floor_mesh = mesh(quad_vertices, floor_textures);
+	floor_mesh.is_indexed = false;
+	floor_mesh.should_cull_face = false;
 
 	std::vector<texture> screen_space_quad_textures = { random_fb_color_tex };
 	mesh ss_quad_mesh = mesh{ quad_vertices, quad_indices, screen_space_quad_textures };
-	ss_quad_mesh.is_indexed = true;
+	ss_quad_mesh.is_indexed = false;
 	ss_quad_mesh.should_cull_face = false;
 
 	mesh rear_quad_mesh = mesh{ rear_quad_vertices, quad_indices, screen_space_quad_textures };
-	rear_quad_mesh.is_indexed = true;
-	rear_quad_mesh.should_cull_face = false;
+	rear_quad_mesh.is_indexed = false;
+	rear_quad_mesh.should_cull_face = false; //meshes
 	
 	
 	#pragma endregion
@@ -494,8 +560,8 @@ int main()
 
 	floor_shadow_renderer = shadow_renderer(std::make_shared<mesh>(floor_mesh));
 
-	model nanosuit = model("res/models/nanosuit2/scene.gltf", false);
-	nanosuit.load("res/models/nanosuit2/scene.gltf");
+	model loaded_model = model("res/models/barrel/scene.gltf", true);
+	//nanosuit.load("res/models/nanosuit2/scene.gltf");
 
 
 	srand(static_cast<unsigned int>(glfwGetTime()));
@@ -635,6 +701,13 @@ int main()
 	lights.push_back(&spotlight);
 	game_objects.push_back(&spotlight);
 
+
+	mvp_loaded_model.model_matrix = glm::mat4(1);
+	mvp_loaded_model.model_matrix = glm::scale(mvp_loaded_model.model_matrix, glm::vec3(0.025f));
+	mvp_loaded_model.model_matrix = glm::rotate(mvp_loaded_model.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
+	mvp_loaded_model.model_matrix = glm::translate(mvp_loaded_model.model_matrix, glm::vec3(0, 1, 1));
+
+
 	
 	#pragma endregion
 
@@ -672,15 +745,16 @@ int main()
 			point_shadow_shader_program.set_matrix(std::string("lightView[").append(std::to_string(i).append("]")), shadow_view_matrices[i]);
 		}
 
-		glm::mat4 nanosuit_model_matrix = glm::mat4(1);
-		nanosuit_model_matrix = glm::translate(nanosuit_model_matrix, glm::vec3(0, -0, 0));
-		nanosuit_model_matrix = glm::scale(nanosuit_model_matrix, glm::vec3(0.1f, 0.1f, 0.1f));
-		point_shadow_shader_program.set_matrix("model", nanosuit_model_matrix);
+		/*glm::mat4 loaded_model_matrix = glm::mat4(1);
+		loaded_model_matrix = glm::translate(loaded_model_matrix, glm::vec3(0, 0, 0));
+		loaded_model_matrix = glm::scale(loaded_model_matrix, glm::vec3(0.05f));
+		loaded_model_matrix = glm::rotate(loaded_model_matrix, glm::radians(90.0f), glm::vec3(0, 0, 1));*/
+		point_shadow_shader_program.set_matrix("model", mvp_loaded_model.model_matrix);
 
 		texture::activate(GL_TEXTURE0);
 		point_shadow_depth_tex.bind();
 		glCullFace(GL_FRONT);
-		nanosuit.draw_shadow(point_shadow_shader_program);
+		loaded_model.draw_shadow(point_shadow_shader_program);
 		glCullFace(GL_BACK);
 
 		glm::mat4 cube_model_matrix = glm::mat4(1);
@@ -702,28 +776,25 @@ int main()
 		mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
 		mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
 		
-		nanosuit_model_matrix = glm::mat4(1);
-		nanosuit_model_matrix = glm::translate(nanosuit_model_matrix, glm::vec3(0, -0, 0));
-		nanosuit_model_matrix = glm::scale(nanosuit_model_matrix, glm::vec3(0.1f, 0.1f, 0.1f));
-		mvp_matrix.model_matrix = nanosuit_model_matrix;
+		mvp_matrix.model_matrix = mvp_loaded_model.model_matrix;
 		
 		shadow_shader_program.use();
 		shadow_shader_program.set_mvp(mvp_matrix);
 
 		glCullFace(GL_FRONT);
-		nanosuit.draw_shadow(shadow_shader_program);
+		loaded_model.draw_shadow(shadow_shader_program);
 		glCullFace(GL_BACK);
 
 		mvp_matrix.model_matrix = cube_model_matrix;
 		shadow_shader_program.set_matrix("model", mvp_matrix.model_matrix);
 		cube_shadow_renderer.draw(shadow_shader_program);
 
-		mvp_matrix.model_matrix = glm::mat4(1);
+		/*mvp_matrix.model_matrix = glm::mat4(1);
 		mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
 		mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
 		mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
 		shadow_shader_program.set_mvp(mvp_matrix);
-		floor_shadow_renderer.draw(shadow_shader_program);
+		floor_shadow_renderer.draw(shadow_shader_program);*/
 		
 		frame_buffer::unbind(); // render scene to directional shadow map
 
@@ -751,7 +822,7 @@ int main()
 		
 		render_light_sources(cube_renderer, light_shader_program);
 		render_floor(floor_renderer, basic_shader_program);
-		render_model(nanosuit, basic_shader_program);
+		render_model(loaded_model, basic_shader_program);
 		//render_planet(planet, planet_shader_program);
 		//render_asteroids(asteroid, asteroid_shader_program);
 		render_skybox(skybox_renderer, skybox_shader_program);
@@ -898,6 +969,8 @@ void render_model(model &m, const shader_program &program)
 	//set_stencil_testing(true);
 	
 	program.use();
+	program.set_float("useShadow", use_shadow ? 1 : 0);
+	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
 	program.set_vec3("tiling", glm::vec3(1));
 	send_point_lights_to_shader(program);
@@ -906,10 +979,7 @@ void render_model(model &m, const shader_program &program)
 	send_material_data_to_shader(program);
 	
 
-	glm::mat4 model_matrix = glm::mat4(1);
-	model_matrix = glm::translate(model_matrix, glm::vec3(0, 0, 0));
-	model_matrix = glm::scale(model_matrix, glm::vec3(0.1f, 0.1f, 0.1f));
-	mvp_matrix.model_matrix = model_matrix;
+	mvp_matrix.model_matrix = mvp_loaded_model.model_matrix;
 	program.set_mvp(mvp_matrix);
 
 	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
@@ -1011,6 +1081,8 @@ void render_floor(const renderer& rend, const shader_program& program)
 	set_stencil_writing(true);
 
 	program.use();
+	program.set_float("useShadow", use_shadow ? 1 : 0);
+	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
 	send_point_lights_to_shader(program);
 	send_dir_light_to_shader(program);
@@ -1018,7 +1090,7 @@ void render_floor(const renderer& rend, const shader_program& program)
 	send_material_data_to_shader(program);
 
 	mvp_matrix.model_matrix = glm::mat4(1);
-	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
+	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, -2));
 	mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians( -90.0f), glm::vec3(1, 0, 0));
 	mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
 	program.set_mvp(mvp_matrix);
@@ -1107,6 +1179,7 @@ void render_debug_windows()
 	const ImTextureID color_tex_id = reinterpret_cast<void*>(random_fb_color_tex.get_id());  // NOLINT(misc-misplaced-const)
 	const ImTextureID depth_tex_id = reinterpret_cast<void*>(random_fb_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
 	const ImTextureID shadow_tex_id = reinterpret_cast<void*>(shadow_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID floor_normal_tex_id = reinterpret_cast<void*>(floor_normal_tex.get_id()); // NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
@@ -1129,9 +1202,20 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
+	if(ImGui::TreeNode("Floor Normal"))
+	{
+
+		ImGui::Image(floor_normal_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
 	ImGui::End();
 
 	ImGui::Begin("Lights");
+
+	ImGui::Checkbox("Use Shadows", &use_shadow);
+	ImGui::Checkbox("Use Normal Maps", &use_normal_maps);
+	
 	if (ImGui::TreeNode("Basic Lights"))
 	{
 		for (size_t i = 0; i < lights.size(); i++)
@@ -1264,6 +1348,7 @@ void send_material_data_to_shader(const shader_program& program)
 
 #pragma endregion
 
+#pragma region Other functions
 std::string get_tex(const std::string& path)
 {
 	return std::string("res/textures/").append(path);
@@ -1362,6 +1447,10 @@ void process_input(GLFWwindow* window)
 	}
 }
 
+#pragma endregion
+
+#pragma region Callbacks
+
 void glfw_error_callback(int error, const char* description)
 {
 	std::cout << description << std::endl;
@@ -1421,5 +1510,4 @@ void scroll_callback(GLFWwindow* window, const double x_offset, const double y_o
 	cam.fov = fov;
 }
 
-
-
+#pragma endregion

@@ -165,7 +165,7 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		std::vector<texture> specular_textures = load_material_textures(material, aiTextureType_SPECULAR, texture_type::specular);
 		textures.insert(textures.end(), specular_textures.begin(), specular_textures.end());
 
-		std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_HEIGHT, texture_type::normal);
+		std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_NORMALS, texture_type::normal);
 		textures.insert(textures.end(), normal_textures.begin(), normal_textures.end());
 
 		/*std::vector<texture> reflection_textures = load_material_textures(material, aiTextureType_AMBIENT, texture_type::reflection);
