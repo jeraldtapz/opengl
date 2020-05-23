@@ -196,11 +196,13 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClCompile Include="src\Source.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="res\shaders\geometry\point_shadow_g.glsl" />
     <None Include="res\shaders\pixel\asteroid_p.glsl" />
     <None Include="res\shaders\pixel\basic_p.glsl" />
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
     <None Include="res\shaders\pixel\planet_p.glsl" />
+    <None Include="res\shaders\pixel\point_shadow_p.glsl" />
     <None Include="res\shaders\pixel\screen_space_p.glsl" />
     <None Include="res\shaders\pixel\skybox_p.glsl" />
     <None Include="res\shaders\pixel\transparent_p.glsl" />
@@ -209,6 +211,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
     <None Include="res\shaders\vertex\planet_v.glsl" />
+    <None Include="res\shaders\vertex\point_shadow_v.glsl" />
     <None Include="res\shaders\vertex\screen_space_v.glsl" />
     <None Include="res\shaders\vertex\simple_depth_v.glsl" />
     <None Include="res\shaders\vertex\skybox_v.glsl" />
@@ -270,6 +273,8 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClInclude Include="src\imgui\imstb_truetype.h" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="res\textures\floor\bricks_col.jpg" />
+    <Image Include="res\textures\floor\bricks_normal.jpg" />
     <Image Include="src\resources\container2_diffuse.png" />
     <Image Include="src\resources\container2_specular.png" />
     <Image Include="src\resources\container_diffuse.jpg" />

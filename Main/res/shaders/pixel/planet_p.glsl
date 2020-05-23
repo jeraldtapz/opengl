@@ -3,9 +3,24 @@
 in vec2 TexCoord;
 out vec4 FragColor;
 
-uniform sampler2D diffuse;
+struct Material
+{
+	sampler2D diffuseTexture0;
+	sampler2D specularTexture0;
+	sampler2D normalTexture0;
+	sampler2D shadowMap0;
+	samplerCube reflectionTexture0;
+
+	vec3 specularColor;
+	vec3 diffuseColor;
+
+	float shininess;
+};
+
+
+uniform Material mat;
 
 void main()
 {
-	FragColor = texture(diffuse, TexCoord);
+	FragColor = texture(mat.diffuseTexture0, TexCoord);
 }

@@ -1,4 +1,5 @@
 #include "rendering/frame_buffer.h"
+#include "glad/glad.h"
 
 
 frame_buffer::frame_buffer()
@@ -11,6 +12,12 @@ void frame_buffer::attach_texture_2d(const unsigned int tex_id, const GLenum att
 {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, tex_id, 0);
 }
+
+void frame_buffer::attach_texture(const texture& tex, const GLenum attachment)
+{
+	glFramebufferTexture(GL_FRAMEBUFFER, attachment, tex.get_id(), 0);
+}
+
 
 void frame_buffer::attach_render_buffer(const unsigned int id, const GLenum attachment, const bool is_multi_sampled)
 {

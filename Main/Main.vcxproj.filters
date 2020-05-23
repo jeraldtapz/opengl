@@ -151,6 +151,9 @@
     <None Include="res\shaders\pixel\screen_space_p.glsl" />
     <None Include="res\shaders\pixel\skybox_p.glsl" />
     <None Include="res\shaders\vertex\simple_depth_v.glsl" />
+    <None Include="res\shaders\vertex\point_shadow_v.glsl" />
+    <None Include="res\shaders\geometry\point_shadow_g.glsl" />
+    <None Include="res\shaders\pixel\point_shadow_p.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">
@@ -324,6 +327,12 @@
       <Filter>Resource Files</Filter>
     </Image>
     <Image Include="src\resources\window.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\textures\floor\bricks_normal.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\textures\floor\bricks_col.jpg">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

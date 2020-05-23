@@ -126,6 +126,14 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		v.normal.y = m->mNormals[i].y;
 		v.normal.z = m->mNormals[i].z;
 
+		v.tangent.x = m->mTangents[i].x;
+		v.tangent.y = m->mTangents[i].y;
+		v.tangent.z = m->mTangents[i].z;
+
+		v.bitangent.x = m->mBitangents[i].x;
+		v.bitangent.y = m->mBitangents[i].y;
+		v.bitangent.z = m->mBitangents[i].z;
+
 		if (m->mTextureCoords[0])
 		{
 			v.tex_coord.x = m->mTextureCoords[0][i].x;
@@ -157,10 +165,10 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		std::vector<texture> specular_textures = load_material_textures(material, aiTextureType_SPECULAR, texture_type::specular);
 		textures.insert(textures.end(), specular_textures.begin(), specular_textures.end());
 
-		/*std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_HEIGHT, texture_type::normal);
+		std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_HEIGHT, texture_type::normal);
 		textures.insert(textures.end(), normal_textures.begin(), normal_textures.end());
 
-		std::vector<texture> reflection_textures = load_material_textures(material, aiTextureType_AMBIENT, texture_type::reflection);
+		/*std::vector<texture> reflection_textures = load_material_textures(material, aiTextureType_AMBIENT, texture_type::reflection);
 		textures.insert(textures.end(), reflection_textures.begin(), reflection_textures.end());*/
 	}
 

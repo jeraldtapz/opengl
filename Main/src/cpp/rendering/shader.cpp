@@ -8,7 +8,7 @@
 shader::shader(const std::string &path, const GLenum shader_type)
 {
 	const std::string actual = std::string("res/shaders/")
-	.append(shader_type == GL_VERTEX_SHADER ? "vertex/" : "pixel/")
+	.append(shader_type == GL_GEOMETRY_SHADER ? "geometry/" : (shader_type == GL_VERTEX_SHADER ? "vertex/" : "pixel/"))
 	.append(path).append(".glsl");
 	
 	std::ifstream inf;
