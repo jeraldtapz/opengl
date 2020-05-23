@@ -21,6 +21,16 @@ model::model(const std::string& path, const bool auto_load, void* data, const un
 		load_model(path);
 }
 
+model::model(const std::string& path, const bool auto_load, const bool is_shadow)
+{
+	is_model_loaded = false;
+	this->is_shadow = is_shadow;
+
+	if (auto_load)
+		load_model(path);
+}
+
+
 void model::load(const std::string &path)
 {
 	if (is_model_loaded)
@@ -40,6 +50,12 @@ void model::draw_instanced(const shader_program& program, const unsigned int cou
 {
 	for (auto& renderer : instanced_renderers)
 		renderer.draw_instanced(program, count);
+}
+
+void model::draw_shadow(const shader_program& program)
+{
+	for (auto& renderer : shadow_renderers)
+		renderer.draw(program);
 }
 
 
@@ -70,17 +86,20 @@ void model::process_node(aiNode* node, const aiScene* scene)
 		aiMesh* ai_mesh = scene->mMeshes[node->mMeshes[i]];
 
 		mesh m = process_mesh(ai_mesh, scene);
-		m.should_cull_face = false;
+		m.should_cull_face = true;
 		m.is_indexed = true;
 		meshes.push_back(m);
 
-		if (is_instanced)
+		if(is_instanced)
 		{
-			instanced_renderer rend = instanced_renderer(std::make_shared<mesh>(m), this->data, this->buffer_size);
-			instanced_renderers.push_back(rend);
+			instanced_renderer instanced_rnd = instanced_renderer(std::make_shared<mesh>(m), this->data, this->buffer_size);
+			instanced_renderers.push_back(instanced_rnd);
 		}
-		else
-			renderers.emplace_back(std::make_shared<mesh>(m));
+		
+		shadow_renderer shadow_rnd = shadow_renderer(std::make_shared<mesh>(m));
+		shadow_renderers.push_back(shadow_rnd);
+		
+		renderers.emplace_back(std::make_shared<mesh>(m));
 	}
 
 	for (unsigned int i = 0; i< node->mNumChildren; i++)
@@ -106,6 +125,14 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		v.normal.x = m->mNormals[i].x;
 		v.normal.y = m->mNormals[i].y;
 		v.normal.z = m->mNormals[i].z;
+
+		v.tangent.x = m->mTangents[i].x;
+		v.tangent.y = m->mTangents[i].y;
+		v.tangent.z = m->mTangents[i].z;
+
+		v.bitangent.x = m->mBitangents[i].x;
+		v.bitangent.y = m->mBitangents[i].y;
+		v.bitangent.z = m->mBitangents[i].z;
 
 		if (m->mTextureCoords[0])
 		{
@@ -138,10 +165,10 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		std::vector<texture> specular_textures = load_material_textures(material, aiTextureType_SPECULAR, texture_type::specular);
 		textures.insert(textures.end(), specular_textures.begin(), specular_textures.end());
 
-		/*std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_HEIGHT, texture_type::normal);
+		std::vector<texture> normal_textures = load_material_textures(material, aiTextureType_HEIGHT, texture_type::normal);
 		textures.insert(textures.end(), normal_textures.begin(), normal_textures.end());
 
-		std::vector<texture> reflection_textures = load_material_textures(material, aiTextureType_AMBIENT, texture_type::reflection);
+		/*std::vector<texture> reflection_textures = load_material_textures(material, aiTextureType_AMBIENT, texture_type::reflection);
 		textures.insert(textures.end(), reflection_textures.begin(), reflection_textures.end());*/
 	}
 

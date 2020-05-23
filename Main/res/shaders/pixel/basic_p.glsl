@@ -2,11 +2,15 @@
 
 #define NR_PT_LIGHTS 4
 
+float when_gt(float x, float y);
+float when_lt(float x, float y);
+
 struct Material
 {
 	sampler2D diffuseTexture0;
 	sampler2D specularTexture0;
 	sampler2D normalTexture0;
+	sampler2D shadowMap0;
 	samplerCube reflectionTexture0;
 
 	vec3 specularColor;
@@ -63,11 +67,15 @@ vec3 CalculateDirectionalLight();
 vec3 CalculatePointLight(PointLight light);
 vec3 CalculateSpotLightContrib(SpotLight light);
 vec3 CalculateReflectionContrib();
-float when_gt(float x, float y);
+float CalculateDirectionalShadow();
+float CalculatePointShadow();
+
 
 in vec3 FragPos;
 in vec2 TexCoord;
 in vec3 Normal;
+in mat3 TBN;
+in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
 
@@ -80,7 +88,10 @@ uniform vec3 viewPos;
 uniform vec3 ambientColor;
 uniform float time;
 uniform float isFlashlightOn;
+uniform float shouldReceiveShadow;
 uniform vec3 tiling;
+uniform samplerCube pointShadowMap;
+uniform float farPlane;
 
 void main()
 {
@@ -96,14 +107,27 @@ void main()
 	vec3 spotLightContrib = CalculateSpotLightContrib(spotLight) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 //	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
+	float pointShadow = CalculatePointShadow();
+	float dirShadow = CalculateDirectionalShadow();
 
-	FragColor =  vec4(pointLightContrib + dirLightContrib + spotLightContrib + ambientContrib, diffColor.a);
+	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	float closestDepth = texture(pointShadowMap, fragToLight).r;
+//	closestDepth *= farPlane;
+
+	FragColor =  vec4(((1 - pointShadow) * pointLightContrib + (1 - dirShadow) * dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
+
+//	FragColor =  vec4((1 - pointShadow) * (pointLightContrib + dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
+//	FragColor = vec4(vec3(closestDepth), 1.0);
 }
 
 vec3 CalculateDirectionalLight()
 {
-	vec3 normal = normalize(Normal);
+	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	normal = normal * 2 - 1.0;
+	normal = normalize(TBN * normal);
+
 	vec3 fragToLight = -dirLight.lightDir;
+	normal = normalize(Normal);
 
 	vec3 fragToView = normalize(viewPos - FragPos);
 	vec3 reflectedLightDir = reflect(dirLight.lightDir, normal);
@@ -126,7 +150,11 @@ vec3 CalculateDirectionalLight()
 
 vec3 CalculatePointLight(PointLight light)
 {
-	vec3 normal = normalize(Normal);
+	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	normal = normal * 2 - 1.0;
+	normal = normalize(TBN * normal);
+	normal = normalize(Normal);
+
 	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
 	vec3 fragToView = normalize(viewPos - FragPos);
@@ -152,7 +180,10 @@ vec3 CalculatePointLight(PointLight light)
 
 vec3 CalculateSpotLightContrib(SpotLight light)
 {
-	vec3 normal = normalize(Normal);
+	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	normal = normalize(normal * 2 - 1.0);
+	normal = normalize(TBN * normal);
+	normal = normalize(Normal);
 	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
 	vec3 fragToView = normalize(viewPos - FragPos);
@@ -179,12 +210,69 @@ vec3 CalculateSpotLightContrib(SpotLight light)
 
 vec3 CalculateReflectionContrib()
 {
-	vec3 incident = normalize(FragPos - viewPos);
-	vec3 reflected = reflect(incident, normalize(Normal));
-	return texture(mat.reflectionTexture0, reflected).rgb;
+//	vec3 incident = normalize(FragPos - viewPos);
+//	vec3 reflected = reflect(incident, normalize(Normal));
+//	return texture(mat.reflectionTexture0, reflected).rgb;
+	return vec3(0);
+}
+
+float CalculateDirectionalShadow()
+{
+	vec3 lightSpacePosProj = FragPosLightSpace.xyz/FragPosLightSpace.w;
+	lightSpacePosProj = lightSpacePosProj * 0.5 + 0.5;
+
+	float closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy).r;
+	float currentDepth = lightSpacePosProj.z;
+
+	vec3 normal = texture(mat.normalTexture0, TexCoord).rgb;
+	normal = normal * 2 - 1.0;
+	normal = normalize(TBN * normal);
+	normal = normalize(Normal);
+
+	vec3 fragToLight = normalize(-dirLight.lightDir);
+
+	float bias = max(0.0005 * (1.0 - dot(normal, fragToLight)), 0.00005);
+
+	vec2 texelSize = 1.0/textureSize(mat.shadowMap0, 0);
+	const int halfKernelWidth = 2;
+	float shadow = 0;
+
+	for(int i = -halfKernelWidth; i <= halfKernelWidth; i++)
+	{
+		for(int j = -halfKernelWidth; j <= halfKernelWidth; j++)
+		{
+			closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy + vec2(i, j) * texelSize).r;
+			shadow += when_gt(currentDepth - bias, closestDepth);
+		}
+	}
+
+	shadow /= ((halfKernelWidth * 2 + 1) * (halfKernelWidth * 2 + 1));
+
+	return shadow;
+}
+
+float CalculatePointShadow()
+{
+	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	float closestDepth = texture(pointShadowMap, fragToLight).r;
+	closestDepth *= farPlane;
+
+	vec3 normal = texture(mat.normalTexture0, TexCoord).rgb;
+	normal = normal * 2 - 1.0;
+	normal = normalize(TBN * normal);
+	normal = normalize(Normal);
+
+	float bias = max(0.05 * (1.0 - dot(normal, normalize(fragToLight))), 0.005);
+	float currentDepth = length(fragToLight);
+	return when_gt(currentDepth - bias, closestDepth);
 }
 
 float when_gt(float x, float y)
 {
   return max(sign(x - y), 0.0f);
+}
+
+float when_lt(float x, float y)
+{
+  return max(sign(y - x), 0.0f);
 }

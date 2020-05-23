@@ -3,7 +3,6 @@
 #include <iostream>
 
 #include "stb_image.h"
-#include "utils/config.h"
 
 texture::texture() = default;
 
@@ -73,9 +72,20 @@ texture::texture(const std::string& absolute_path, const texture_type type, cons
 texture::texture(const texture_type type, const unsigned int width, const unsigned int height, const GLenum format, const GLenum internal_format, const GLenum data_format, const bool generate_mipmaps)
 {
 	id = 0;
-	this->wrap_mode = GL_REPEAT;
-	this->filter_mag = GL_LINEAR;
-	this->filter_min = GL_LINEAR;
+
+	if(type == texture_type::cube)
+	{
+		this->wrap_mode = GL_CLAMP_TO_EDGE;
+		this->filter_mag = GL_NEAREST;
+		this->filter_min = GL_NEAREST;
+	}
+	else
+	{
+		this->wrap_mode = GL_REPEAT;
+		this->filter_mag = GL_LINEAR;
+		this->filter_min = GL_LINEAR;
+	}
+	
 	this->width = width;
 	this->height = height;
 	
@@ -85,11 +95,18 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 	glGenTextures(1, &id);
 
 	bind();
-
-	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, format, data_format, nullptr);
+	if(type == texture_type::cube)
+	{
+		for (int i = 0;i < 6; i++)
+		{
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, width, height, 0, format, data_format, nullptr);
+		}
+	}
+	else
+		glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, format, data_format, nullptr);
 	
 	if (generate_mipmaps)
-		glGenerateMipmap(GL_TEXTURE_2D);
+		glGenerateMipmap(type == texture_type::cube ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D);
 
 	switch (format)
 	{
@@ -97,6 +114,7 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 		case GL_GREEN:
 		case GL_BLUE:
 		case GL_ALPHA:
+		case GL_FLOAT:
 			channels = 1;
 			break;
 
@@ -113,7 +131,7 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 			break;
 
 		default:
-			channels = 0;
+			channels = 1;
 			break;
 	}
 	
@@ -188,7 +206,8 @@ texture::texture(const std::string paths[], const texture_type type, const GLenu
 	is_multi_sampled = false;
 
 	glGenTextures(1, &id);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, id);
+	bind();
+	//glBindTexture(GL_TEXTURE_CUBE_MAP, id);
 
 	int temp_width;
 	int temp_height;
@@ -270,7 +289,10 @@ unsigned texture::get_height() const
 
 void texture::bind() const
 {
-	glBindTexture(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, this->id);
+	if (type == texture_type::cube)
+		glBindTexture(GL_TEXTURE_CUBE_MAP, this->id);
+	else
+		glBindTexture(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, this->id);
 }
 
 void texture::activate(GLenum texture_location)
@@ -290,6 +312,7 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::depth: return "depth";
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
+		case texture_type::cube: return "cube";
 	default: return "error";
 	}
 }
@@ -297,20 +320,40 @@ std::string texture::type_to_string(const texture_type type)
 void texture::set_wrap_mode(const GLint wrap_mode)
 {
 	this->wrap_mode = wrap_mode;
-	glTexParameteri(is_multi_sampled ?  GL_TEXTURE_2D_MULTISAMPLE :  GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, this->wrap_mode);
-	glTexParameteri(is_multi_sampled ?  GL_TEXTURE_2D_MULTISAMPLE :  GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, this->wrap_mode);
-	glTexParameteri(is_multi_sampled ?  GL_TEXTURE_2D_MULTISAMPLE :  GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, this->wrap_mode);
+
+	if(type == texture_type::cube)
+	{
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, this->wrap_mode);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, this->wrap_mode);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, this->wrap_mode);
+	}
+	else
+	{
+		glTexParameteri(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, this->wrap_mode);
+		glTexParameteri(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, this->wrap_mode);
+		glTexParameteri(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, this->wrap_mode);
+	}
 }
 
 void texture::set_filter_mag(const GLint filter_mag)
 {
 	this->filter_mag = filter_mag;
-	glTexParameteri(is_multi_sampled ?  GL_TEXTURE_2D_MULTISAMPLE :  GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_mag);
+	if(type == texture_type::cube)
+	{
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, filter_mag);
+	}
+	else
+		glTexParameteri(is_multi_sampled ?  GL_TEXTURE_2D_MULTISAMPLE :  GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_mag);
 }
 
 void texture::set_filter_min(const GLint filter_min)
 {
 	this->filter_min = filter_min;
+	if (type == texture_type::cube)
+	{
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, filter_min);
+	}
+	else
 	glTexParameteri(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_min);
 }
 
