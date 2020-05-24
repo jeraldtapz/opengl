@@ -11,6 +11,7 @@ struct Material
 	sampler2D specularTexture0;
 	sampler2D normalTexture0;
 	sampler2D shadowMap0;
+	sampler2D heightTexture0;
 	samplerCube reflectionTexture0;
 
 	vec3 specularColor;
@@ -69,50 +70,51 @@ vec3 CalculateSpotLightContrib(SpotLight light);
 vec3 CalculateReflectionContrib();
 float CalculateDirectionalShadow();
 float CalculatePointShadow();
+vec2 GetTexCoords(float useParallaxLocal);
 
-
-in vec3 FragPos;
+in DirLight DirLightTangent;
+in PointLight PointLightsTangent[4];
+in SpotLight SpotLightTangent;
+in vec3 ViewPosTangent;
+in vec3 FragPosTangent;
 in vec2 TexCoord;
-in vec3 Normal;
+in vec3 NormalTangent;
+in vec4 FragPosDirLightSpace;
 in mat3 TBN;
-in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
 
 uniform Material mat;
-uniform DirLight dirLight;
-uniform SpotLight spotLight;
-uniform PointLight pointLights[NR_PT_LIGHTS];
-
-uniform vec3 viewPos;
 uniform vec3 ambientColor;
 uniform float time;
 uniform float isFlashlightOn;
 uniform float shouldReceiveShadow;
 uniform vec3 tiling;
+uniform vec3 offset;
 uniform samplerCube pointShadowMap;
 uniform float farPlane;
 uniform float useShadow;
 uniform float useNormalMaps;
+uniform float useParallax;
 
 void main()
 {
-	vec4 diffColor = texture(mat.diffuseTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y));
+	vec4 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0));
 
 	vec3 pointLightContrib;
 
 	for(int i = 0; i < NR_PT_LIGHTS; i++)
 	{
-		pointLightContrib += CalculatePointLight(pointLights[i]);
+		pointLightContrib += CalculatePointLight(PointLightsTangent[i]);
 	}
 	vec3 dirLightContrib = CalculateDirectionalLight();
-	vec3 spotLightContrib = CalculateSpotLightContrib(spotLight) * isFlashlightOn;
+	vec3 spotLightContrib = CalculateSpotLightContrib(SpotLightTangent) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 //	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
 	float pointShadow = CalculatePointShadow() * useShadow;
 	float dirShadow = CalculateDirectionalShadow() * useShadow;
 
-	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	vec3 fragToLight = FragPosTangent - PointLightsTangent[0].lightPos;
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
 
 	FragColor =  vec4(((1 - pointShadow) * pointLightContrib + (1 - dirShadow) * dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
@@ -122,27 +124,26 @@ void main()
 
 vec3 CalculateDirectionalLight()
 {
-	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
-	vec3 fragToLight = -dirLight.lightDir;
+	vec3 fragToLight = -DirLightTangent.lightDir;
 
-	vec3 fragToView = normalize(viewPos - FragPos);
-	vec3 reflectedLightDir = reflect(dirLight.lightDir, normal);
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
+	vec3 reflectedLightDir = reflect(DirLightTangent.lightDir, normal);
 	vec3 halfwayDir = normalize(fragToView + fragToLight);
 
 	float diffuseStrength = max(dot(normal, fragToLight), 0);
-	vec3 diffuse = diffuseStrength * dirLight.diffuseColor * dirLight.diffuseIntensity * mat.diffuseColor;
+	vec3 diffuse = diffuseStrength * DirLightTangent.diffuseColor * DirLightTangent.diffuseIntensity * mat.diffuseColor;
 
 	float specularStrength = pow(max(dot(normal, halfwayDir), 0), mat.shininess);
-	vec3 specular = specularStrength * dirLight.specularColor * dirLight.specularIntensity * mat.specularColor;
+	vec3 specular = specularStrength * DirLightTangent.specularColor * DirLightTangent.specularIntensity * mat.specularColor;
 
 
-	vec3 diffColor = texture(mat.diffuseTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
-	vec3 specColor = texture(mat.specularTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0)).rgb;
+	vec3 specColor = texture(mat.specularTexture0,  GetTexCoords(1.0)).rgb;
 
 	vec3 result = diffColor * diffuse + specColor * specular; 
 
@@ -151,19 +152,18 @@ vec3 CalculateDirectionalLight()
 
 vec3 CalculatePointLight(PointLight light)
 {
-	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
-	vec3 fragToLight = normalize(light.lightPos - FragPos);
+	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
 
-	vec3 fragToView = normalize(viewPos - FragPos);
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
 	vec3 reflectedLightDir = reflect(-fragToLight, normal);
 	vec3 halfwayDir = normalize(fragToLight + fragToView);
 
-	float distance = length(light.lightPos - FragPos);
+	float distance = length(light.lightPos - FragPosTangent);
 	float attenuation = 1.0f /(1 + distance * light.linear + distance * distance * light.quadratic);
 
 	float diffuseStrength = max(dot(normal, fragToLight), 0);
@@ -172,8 +172,8 @@ vec3 CalculatePointLight(PointLight light)
 	float specularStrength = pow(max(dot(halfwayDir, normal), 0.0), mat.shininess);
 	vec3 specular = specularStrength * light.specularColor * light.specularIntensity * mat.specularColor;
 
-	vec3 diffColor = texture(mat.diffuseTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
-	vec3 specColor = texture(mat.specularTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0)).rgb;
+	vec3 specColor = texture(mat.specularTexture0, GetTexCoords(1.0)).rgb;
 
 	vec3 result = diffColor * diffuse + specColor * specular; 
 	result *= attenuation;
@@ -182,12 +182,12 @@ vec3 CalculatePointLight(PointLight light)
 
 vec3 CalculateSpotLightContrib(SpotLight light)
 {
-	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normalize(normal * 2 - 1.0);
-	normal = normalize(TBN * normal);
-	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
-	vec3 fragToView = normalize(viewPos - FragPos);
+	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
+
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
 	vec3 reflectedLightDir = reflect(-fragToLight, normal);
 	vec3 halfwayDir = normalize(fragToLight + fragToView);
 
@@ -197,8 +197,8 @@ vec3 CalculateSpotLightContrib(SpotLight light)
 	float specularStrength = pow(max(dot(halfwayDir, normal), 0), mat.shininess);
 	vec3 specular = specularStrength * light.specularColor * light.specularIntensity * mat.specularColor;
 
-	vec3 diffColor = texture(mat.diffuseTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
-	vec3 specColor = texture(mat.specularTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0)).rgb;
+	vec3 specColor = texture(mat.specularTexture0, GetTexCoords(1.0)).rgb;
 
 	float theta = dot(normalize(-light.spotDirection), fragToLight); 
 	float epsilon = light.innerCutOffValue - light.cutOffValue;
@@ -219,18 +219,18 @@ vec3 CalculateReflectionContrib()
 
 float CalculateDirectionalShadow()
 {
-	vec3 lightSpacePosProj = FragPosLightSpace.xyz/FragPosLightSpace.w;
+	vec3 lightSpacePosProj = FragPosDirLightSpace.xyz/FragPosDirLightSpace.w;
 	lightSpacePosProj = lightSpacePosProj * 0.5 + 0.5;
 
 	float closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy).r;
 	float currentDepth = lightSpacePosProj.z;
 
-	vec3 normal = texture(mat.normalTexture0, TexCoord).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(0.0)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
-	normal = normalize(Normal);
 
-	vec3 fragToLight = normalize(-dirLight.lightDir);
+	normal = normalize(NormalTangent);
+
+	vec3 fragToLight = normalize(-DirLightTangent.lightDir);
 
 	float bias = max(0.0005 * (1.0 - dot(normal, fragToLight)), 0.00005);
 
@@ -254,21 +254,56 @@ float CalculateDirectionalShadow()
 
 float CalculatePointShadow()
 {
-	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	//convert back to world space because the shadow map was done in world space
+	vec3 fragToLight = TBN * (FragPosTangent - PointLightsTangent[0].lightPos);
+	
+
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
 	closestDepth *= farPlane;
 
-	vec3 normal = texture(mat.normalTexture0, 
-	vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(0.0)).rgb;
 	normal = normal * 2 - 1.0;
-//	normal = normalize(TBN * normal);
-//	normal = normalize(Normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	float bias = max(0.05 * (1.0 - dot(normal, normalize(fragToLight))), 0.005);
 	float currentDepth = length(fragToLight);
 	return when_gt(currentDepth - bias, closestDepth);
+}
+
+vec2 GetTexCoords(float useParallaxLocal)
+{
+	vec2 texCoord = vec2(TexCoord.x * tiling.x + offset.x , TexCoord.y * tiling.y + offset.y);
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
+
+	//parallax mapping
+	const float minLayers = 8.0;
+	const float maxLayers = 64.0;
+	float numLayers = mix(minLayers, maxLayers, max(dot(vec3(0.0, 0.0, 1.0), fragToView), 0.0));
+	float heightScale = 0.05;
+
+	float perLayerDepth = 1.0/numLayers;
+	float currentLayerDepth = 0.0;
+	vec2 p = fragToView.xy * heightScale;
+	vec2 deltaTexCoord = p/numLayers;
+
+	vec2 currentTexCoord = texCoord;
+	float currentDepthMapValue = texture(mat.heightTexture0, currentTexCoord).r;
+
+	while(currentLayerDepth < currentDepthMapValue)
+	{
+		currentTexCoord -= deltaTexCoord;
+		currentDepthMapValue = texture(mat.heightTexture0, currentTexCoord).r;
+		currentLayerDepth += perLayerDepth;
+	}
+
+	vec2 prevTexCoord = currentTexCoord + deltaTexCoord;
+	float afterDepth = currentDepthMapValue - currentLayerDepth;
+	float beforeDepth = texture(mat.heightTexture0, prevTexCoord).r - currentLayerDepth + perLayerDepth;
+
+	float weight = afterDepth/(afterDepth - beforeDepth);
+	vec2 finalTexCoords = prevTexCoord * weight + currentTexCoord * (1.0 - weight);
+	return (useParallaxLocal * useParallax) * finalTexCoords + ((1 - (useParallaxLocal * useParallax)) * texCoord);
 }
 
 float when_gt(float x, float y)

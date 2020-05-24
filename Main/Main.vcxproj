@@ -274,6 +274,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\textures\floor\bricks_col.jpg" />
+    <Image Include="res\textures\floor\bricks_displacement.jpg" />
     <Image Include="res\textures\floor\bricks_normal.jpg" />
     <Image Include="src\resources\container2_diffuse.png" />
     <Image Include="src\resources\container2_specular.png" />

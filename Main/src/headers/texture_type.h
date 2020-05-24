@@ -10,5 +10,6 @@ enum class texture_type
 	depth,
 	stencil,
 	depth_stencil,
-	cube
+	cube,
+	height,
 };

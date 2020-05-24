@@ -335,5 +335,8 @@
     <Image Include="res\textures\floor\bricks_col.jpg">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="res\textures\floor\bricks_displacement.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>
