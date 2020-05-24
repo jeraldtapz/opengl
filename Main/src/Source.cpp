@@ -55,7 +55,7 @@ void disable_stencil_testing();
 
 
 
-void render_light_sources(const renderer &rend, const shader_program &light_shader_program);
+void render_light_sources(model &m, const shader_program &light_shader_program);
 void render_model(model& m, const shader_program& program);
 void render_model(model& m, const tiling_and_offset &tiling_and_offset, const shader_program& program);
 void render_planet(model& m, const shader_program& program);
@@ -102,6 +102,7 @@ double last_y = config::HEIGHT * 0.5;
 float key_press_cooldown = 0.25f;
 float last_cursor_swap = 0.0f;
 float last_flash_light_swap = 0.0f;
+float hdr_exposure = 1.0f;
 
 int cursor_mode = GLFW_CURSOR_NORMAL;
 bool first_mouse;
@@ -110,6 +111,8 @@ bool is_open;
 bool use_shadow = true;
 bool use_normal_maps = true;
 bool use_parallax = true;
+bool use_gamma_correction = true;
+bool use_hdr = true;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -479,6 +482,7 @@ int main()
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
+	shader_program basic_shader_program_3 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program light_shader_program = shader_program(&light_shader_vertex, &light_shader_pixel);
 	shader_program outline_shader_program = shader_program(&outline_shader_vertex, &outline_shader_pixel);
 	shader_program transparent_shader_program = shader_program(&transparent_shader_vertex, &transparent_shader_pixel);
@@ -512,7 +516,7 @@ int main()
 	
 	texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
 
-	random_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false);
+	random_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
 	random_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
 
 	random_fb_stencil_tex = texture(texture_type::stencil, config::WIDTH, config::HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX8, GL_UNSIGNED_BYTE, false);
@@ -585,6 +589,7 @@ int main()
 
 	//loaded models
 	model barrel_model = model("res/models/barrel/scene.gltf", true);
+	model sphere_model = model("res/models/sphere/sphere.obj", true);
 	//model cabin_model = model("res/models/cabin_gltf/scene.gltf", true);
 	//nanosuit.load("res/models/nanosuit2/scene.gltf");
 
@@ -642,12 +647,6 @@ int main()
 	random_fb.bind();
 	frame_buffer::attach_texture_2d(random_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
 	frame_buffer::attach_texture_2d(random_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
-	//frame_buffer::attach_texture_2d(random_fb_stencil_tex.get_id(), GL_STENCIL_ATTACHMENT, false);
-	//frame_buffer::attach_texture_2d(random_fb_depth_stencil_tex.get_id(), GL_DEPTH_STENCIL_ATTACHMENT, false);
-
-	render_buffer rb = render_buffer(GL_DEPTH24_STENCIL8, config::WIDTH, config::HEIGHT);
-
-	//frame_buffer::attach_render_buffer(rb.get_id(), GL_DEPTH_STENCIL_ATTACHMENT, false);
 
 	frame_buffer::unbind(); // random_fb
 
@@ -668,21 +667,33 @@ int main()
 	std::cout << "frame buffer for point shadow " << frame_buffer::validate() << std::endl;
 	frame_buffer::unbind(); // point shadow fb
 
+	hdr_fb.generate();
+	hdr_fb.bind();
+	frame_buffer::attach_texture_2d(hdr_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
+	
+	render_buffer hdr_rb = render_buffer(GL_DEPTH24_STENCIL8, config::WIDTH, config::HEIGHT);
+	frame_buffer::attach_render_buffer(hdr_rb.get_id(), GL_DEPTH_STENCIL_ATTACHMENT, false);
+
+	std::cout << "HDR frame buffer " << frame_buffer::validate() << std::endl;
+
+	frame_buffer::unbind(); // hdr fb
+
 	
 	vp_ubo = uniform_buffer_object(2 * sizeof(glm::mat4), GL_STATIC_DRAW);
 
 	//bind ubo to binding point 1
 	glBindBufferBase(GL_UNIFORM_BUFFER, 1, vp_ubo.get_id());
 
+	//in opengl 4.x binding point can be specified in shader
 	//bind shader program to binding point 1
 	/*unsigned int vp_index = glGetUniformBlockIndex(basic_shader_program.id, "VP");
-	glUniformBlockBinding(basic_shader_program.id, vp_index, 1);*/
+	glUniformBlockBinding(basic_shader_program.id, vp_index, 1);*/ // UBOs
 	
 	#pragma endregion
 
 	#pragma region Camera Initialization
 
-	cam.get_transform()->set_rotation(glm::vec3(45, 90, -30));
+	cam.get_transform()->set_rotation(glm::vec3(-45, 90,0));
 	cam.get_transform()->set_position(glm::vec3(0, 4, -2));
 	
 	#pragma endregion
@@ -715,6 +726,7 @@ int main()
 	for (size_t i = 0; i < 4 ; i++)
 	{
 		point_lights[i].get_transform()->set_position(point_light_positions[i]);
+		point_lights[i].get_transform()->set_scale(glm::vec3(0.1f));
 		point_lights[i].linear = 0.09f;
 		point_lights[i].quadratic = 0.032f;
 		point_lights[i].is_active = i == 0;
@@ -748,6 +760,9 @@ int main()
 	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 	floor_model.get_transform()->set_scale(glm::vec3(5, 5, 1));
 	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(5,5), glm::vec2(0,0) };
+
+	sphere_model.get_transform()->set_position(glm::vec3(1, 5, 0));
+	sphere_model.get_transform()->set_scale(glm::vec3(0.1f));
 	
 	#pragma endregion
 
@@ -756,18 +771,18 @@ int main()
 	while(!glfwWindowShouldClose(window))
 	{
 		process_input(window);
-
-		//shadow pass
+		
 		render_omnidirectional_shadow_map(game_models, point_shadow_shader_program);
-		render_directional_shadow_map(game_models, shadow_shader_program);
+		render_directional_shadow_map(game_models, shadow_shader_program); // shadow passes
 
 		glViewport(0, 0, config::WIDTH, config::HEIGHT);
-		ms_fb.bind();
+
+		if (use_hdr)
+			hdr_fb.bind();
+		else
+			ms_fb.bind();
 
 		clear_frame();
-
-		set_depth_testing(true);
-		set_stencil_testing(true);
 
 		mvp_matrix.view = cam.get_view_matrix();
 		mvp_matrix.projection = cam.get_proj_matrix();
@@ -776,7 +791,7 @@ int main()
 		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection));
 
 		render_model(cube_model, tiling_and_offset(), planet_shader_program);
-		render_light_sources(cube_renderer, light_shader_program);
+		render_light_sources(sphere_model, light_shader_program);
 		render_model(barrel_model, tiling_and_offset(), basic_shader_program);
 		render_model(floor_model, floor_tiling_and_offset, basic_shader_program_2);
 		render_skybox(skybox_renderer, skybox_shader_program);
@@ -786,9 +801,9 @@ int main()
 		//render_asteroids(asteroid, asteroid_shader_program);
 		//render_transparent_quads(quad_renderer, transparent_shader_program);
 		
-		frame_buffer::unbind(); // render normally, with multi sampling
+		frame_buffer::unbind(); // render normally, with HDR
 
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, ms_fb.get_id());
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, use_hdr ? hdr_fb.get_id() : ms_fb.get_id());
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, random_fb.get_id());
 		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
@@ -891,27 +906,21 @@ void set_stencil_writing(const bool flag)
 
 #pragma region Render Functions
 
-void render_light_sources(const renderer& rend, const shader_program& light_shader_program)
+void render_light_sources(model& m, const shader_program& light_shader_program)
 {
-	set_depth_writing(true);
+	light_shader_program.use();
+
  	for (int i = 0; i < 4; i++)
 	{
-		light_shader_program.use();
-
 		light& l = (*lights[i]);
  		
 		if (l.get_name() == "spot_light" || !l.is_active)
 			continue;
-		
-		glm::mat4 light_model_matrix = glm::mat4(1);
-		light_model_matrix = glm::translate(light_model_matrix, l.get_transform()->position());
-		light_model_matrix = glm::scale(light_model_matrix, glm::vec3(0.1f));
 
-		light_shader_program.set_vec3("color", l.diffuse.to_vec3());
-		mvp_matrix.model_matrix = light_model_matrix;
-		light_shader_program.set_mvp(mvp_matrix);
+		light_shader_program.set_vec3("color", l.diffuse.to_vec3() * l.diff_intensity);
+		m.get_transform()->set_position(l.get_transform()->position());
 
-		rend.draw(light_shader_program);
+		render_model(m, light_shader_program);
 	}
 }
 
@@ -1178,6 +1187,9 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	program.use();
 	program.set_float_array("kernel", 9, kernel.kernel);
 	program.set_vec2_array("offsets", 9, &kernel.offset[0].x);
+	program.set_float("exposure", hdr_exposure);
+	program.set_float("useGammaCorrection", use_gamma_correction ? 1 : 0);
+	program.set_float("useHDR", use_gamma_correction ? 1 : 0);
 	screen_space_quad_renderer.draw(program);
 	rend.draw(program);
 }
@@ -1284,8 +1296,8 @@ void render_debug_windows()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	/*is_open = true;
-	ImGui::ShowDemoWindow(&is_open);*/
+	is_open = true;
+	ImGui::ShowDemoWindow(&is_open);
 
 	ImGui::Begin("Debug Textures");
 
@@ -1322,6 +1334,8 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
+	
+
 	ImGui::End();
 
 	ImGui::Begin("Lights");
@@ -1329,6 +1343,14 @@ void render_debug_windows()
 	ImGui::Checkbox("Use Shadows", &use_shadow);
 	ImGui::Checkbox("Use Normal Maps", &use_normal_maps);
 	ImGui::Checkbox("Use Parallax Mapping", &use_parallax);
+	ImGui::Checkbox("Use HDR", &use_hdr);
+	ImGui::Checkbox("Use Gamma Correction", &use_gamma_correction);
+
+	ImGui::Spacing();
+
+	ImGui::SliderFloat("HDR Exposure", &hdr_exposure, 0, 10, "%.3f", 1.0f);
+	
+	ImGui::Spacing();
 	
 	if (ImGui::TreeNode("Basic Lights"))
 	{
