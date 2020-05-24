@@ -1,9 +1,13 @@
 #version 330 core
 layout (location = 0) in vec3 aPos;
 
+layout(std140, binding = 1) uniform VP
+{
+	mat4 view;
+	mat4 projection;
+};
+
 uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
 
 void main()
 {

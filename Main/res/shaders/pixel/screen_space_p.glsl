@@ -1,14 +1,19 @@
 #version 330 core
 
+const float offset = 1.0 / 300.0; 
+
+
 in vec2 TexCoord;
 out vec4 FragColor;
-uniform sampler2D screenColor;
 
-const float offset = 1.0 / 300.0; 
+uniform sampler2D screenColor;
+uniform float useHDR;
+uniform float useGammaCorrection;
 
 
 uniform float kernel[9];
 uniform vec2 offsets[9];
+uniform float exposure;
 
 //vec2 offsets[9] = vec2[](
 //        vec2(-offset,  offset), // top-left
@@ -39,8 +44,14 @@ void main()
 	for(int i = 0; i < 9; i++)
 		color += samples[i] * kernel[i];
 
-//	FragColor = vec4(color, 1);
+
+	//hdr
+	vec3 c = texture(screenColor, TexCoord).rgb;
+	vec3 hdrColor = c / (c + vec3(1));
+	hdrColor = vec3(1.0) - exp(-c * exposure);
+	hdrColor = useHDR * hdrColor + (1 - useHDR) * c;
+
+	//gamma correction
 	float gamma = 2.2;
-	FragColor = vec4(texture(screenColor, TexCoord).rgb, 1);
-	FragColor.rgb = pow(FragColor.rgb, vec3(1.0/gamma));
+	FragColor = useGammaCorrection * vec4(pow(hdrColor, vec3(1.0/gamma)), 1.0) +  (1 - useGammaCorrection) * vec4(hdrColor, 1.0);
 }
