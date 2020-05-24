@@ -5,8 +5,13 @@
 frame_buffer::frame_buffer()
 {
 	id = 0;
+}
+
+void frame_buffer::generate()
+{
 	glGenFramebuffers(1, &id);
 }
+
 
 void frame_buffer::attach_texture_2d(const unsigned int tex_id, const GLenum attachment, const bool is_multi_sampled)
 {

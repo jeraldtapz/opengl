@@ -13,6 +13,7 @@
 
 
 #include "data/kernel3.h"
+#include "data/tiling_and_offset.h"
 #include "data/mesh.h"
 #include "data/model.h"
 #include "data/mvp.h"
@@ -41,6 +42,7 @@ std::string get_tex(const std::string& path);
 void clear_color_buffer();
 void clear_depth_buffer();
 void clear_stencil_buffer();
+void clear_frame();
 
 void set_depth_testing(const bool flag);
 void set_stencil_testing(const bool flag);
@@ -55,13 +57,16 @@ void disable_stencil_testing();
 
 void render_light_sources(const renderer &rend, const shader_program &light_shader_program);
 void render_model(model& m, const shader_program& program);
+void render_model(model& m, const tiling_and_offset &tiling_and_offset, const shader_program& program);
 void render_planet(model& m, const shader_program& program);
 void render_asteroids(model& m, const shader_program& program);
-void render_model_outline(model &m, const shader_program &program);
+void render_model_outline(model& m, const shader_program& program);
 void render_floor(const renderer& rend, const shader_program& program);
 void render_transparent_quads(const renderer& rend, const shader_program& program);
 void render_skybox(const renderer& rend, const shader_program& program);
 void render_pp_quad(const renderer& rend, const shader_program& program);
+void render_directional_shadow_map(std::vector<model> &models, const shader_program& program);
+void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program& program);
 
 void send_dir_light_to_shader(const shader_program& program);
 void send_point_lights_to_shader(const shader_program& program);
@@ -132,6 +137,7 @@ material cube_mat;
 //textures
 const unsigned int SAMPLES = 8;
 texture ms_color_tex, ms_depth_tex, shadow_depth_tex, point_shadow_depth_tex;
+texture hdr_color_tex;
 
 texture random_fb_color_tex, random_fb_depth_tex, random_fb_stencil_tex, random_fb_depth_stencil_tex;
 texture container_diff_tex;
@@ -139,10 +145,21 @@ texture skybox_tex;
 
 texture floor_normal_tex;
 
+
+//models
+std::vector<model> game_models;
+
 renderer cube_renderer, screen_space_quad_renderer, rear_quad_renderer, skybox_renderer, floor_renderer;
 transparent_renderer quad_renderer;
 
 shadow_renderer floor_shadow_renderer, cube_shadow_renderer;
+
+
+frame_buffer shadow_fb = frame_buffer();
+frame_buffer point_shadow_fb = frame_buffer();
+frame_buffer random_fb = frame_buffer();
+frame_buffer ms_fb = frame_buffer();
+frame_buffer hdr_fb = frame_buffer();
 
 uniform_buffer_object vp_ubo;
 
@@ -408,7 +425,7 @@ int main()
 
 	glm::vec3 point_light_positions[] = 
 	{
-		glm::vec3(0.0f,  1.0f,  1.0f),
+		glm::vec3(0.0f,  4.5f,  1.0f),
 		glm::vec3(2.3f, -3.3f, -4.0f),
 		glm::vec3(-4.0f,  2.0f, -12.0f),
 		glm::vec3(0.0f,  0.0f, -3.0f)
@@ -461,6 +478,7 @@ int main()
 
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
+	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program light_shader_program = shader_program(&light_shader_vertex, &light_shader_pixel);
 	shader_program outline_shader_program = shader_program(&outline_shader_vertex, &outline_shader_pixel);
 	shader_program transparent_shader_program = shader_program(&transparent_shader_vertex, &transparent_shader_pixel);
@@ -488,11 +506,11 @@ int main()
 
 	texture window_tex = texture(get_tex("window.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
 
-	texture floor_tex = texture(get_tex("floor2/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	floor_normal_tex = texture(get_tex("floor2/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
-	texture floor_height_tex = texture(get_tex("floor2/bricks_displacement.jpg"), texture_type::height, GL_UNSIGNED_BYTE, true);
+	texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
+	floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
+	texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), texture_type::height, GL_UNSIGNED_BYTE, true);
 	
-	/*texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);*/
+	texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
 
 	random_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false);
 	random_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
@@ -505,9 +523,12 @@ int main()
 
 	ms_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
 
+	hdr_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+
 	shadow_depth_tex = texture(texture_type::depth, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 
 	point_shadow_depth_tex = texture(texture_type::cube, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+	
 
 
 	skybox_tex = texture(skybox_texture_paths, texture_type::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
@@ -533,7 +554,7 @@ int main()
 	transparent_quad_mesh.is_indexed = false;
 	transparent_quad_mesh.should_cull_face = false;
 
-	std::vector<texture> floor_textures = { floor_tex, floor_normal_tex , floor_height_tex };
+	std::vector<texture> floor_textures = { floor_tex, floor_spec_tex, floor_normal_tex , floor_height_tex };
 	mesh floor_mesh = mesh(quad_vertices, floor_textures);
 	floor_mesh.is_indexed = false;
 	floor_mesh.should_cull_face = false;
@@ -562,9 +583,17 @@ int main()
 
 	floor_shadow_renderer = shadow_renderer(std::make_shared<mesh>(floor_mesh));
 
-	model loaded_model = model("res/models/barrel/scene.gltf", true);
+	//loaded models
+	model barrel_model = model("res/models/barrel/scene.gltf", true);
+	//model cabin_model = model("res/models/cabin_gltf/scene.gltf", true);
 	//nanosuit.load("res/models/nanosuit2/scene.gltf");
 
+	//generated models
+	std::vector<mesh> cube_meshes = { cube_mesh };
+	model cube_model = model(cube_meshes);
+
+	std::vector<mesh> floor_meshes = { floor_mesh };
+	model floor_model = model(floor_meshes);
 
 	srand(static_cast<unsigned int>(glfwGetTime()));
 	float radius = 50.0f;
@@ -594,20 +623,22 @@ int main()
 
 	model asteroid = model("res/models/rock/rock.obj", true, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
 	model planet = model("res/models/planet/planet.obj", true);
+
+	game_models.push_back(barrel_model);
+	game_models.push_back(cube_model);
 	
 	#pragma endregion
 
 	#pragma region FrameBuffers and RenderBuffers and Uniform Buffer Objects
 
-	frame_buffer ms_fb = frame_buffer();
-
+	ms_fb.generate();
 	ms_fb.bind();
 	frame_buffer::attach_texture_2d(ms_color_tex.get_id(), GL_COLOR_ATTACHMENT0, true);
 	frame_buffer::attach_texture_2d(ms_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, true);
 	std::cout << "frame buffer with multi sampled color and depth texture " << frame_buffer::validate() << std::endl;;
-	frame_buffer::unbind();  //multi sampling fb
+	frame_buffer::unbind(); // Multi sampled fb
 	
-	frame_buffer random_fb = frame_buffer();
+	random_fb.generate();
 	random_fb.bind();
 	frame_buffer::attach_texture_2d(random_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
 	frame_buffer::attach_texture_2d(random_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
@@ -620,16 +651,15 @@ int main()
 
 	frame_buffer::unbind(); // random_fb
 
-	frame_buffer shadow_fb = frame_buffer();
+	shadow_fb.generate();
 	shadow_fb.bind();
-
 	frame_buffer::attach_texture_2d(shadow_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
 	glDrawBuffer(GL_NONE);
 	glReadBuffer(GL_NONE);
 	std::cout << "shadow frame buffer with depth texture " << frame_buffer::validate() << std::endl;;
 	frame_buffer::unbind(); // shadow fb
 
-	frame_buffer point_shadow_fb = frame_buffer();
+	point_shadow_fb.generate();
 	point_shadow_fb.bind();
 	frame_buffer::attach_texture(point_shadow_depth_tex, GL_DEPTH_ATTACHMENT);
 	glDrawBuffer(GL_NONE);
@@ -652,8 +682,8 @@ int main()
 
 	#pragma region Camera Initialization
 
-	cam.get_transform()->set_rotation(glm::vec3(0, 90, 0));
-	cam.get_transform()->set_position(glm::vec3(0, 0, -2));
+	cam.get_transform()->set_rotation(glm::vec3(45, 90, -30));
+	cam.get_transform()->set_position(glm::vec3(0, 4, -2));
 	
 	#pragma endregion
 
@@ -709,7 +739,15 @@ int main()
 	mvp_loaded_model.model_matrix = glm::rotate(mvp_loaded_model.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
 	mvp_loaded_model.model_matrix = glm::translate(mvp_loaded_model.model_matrix, glm::vec3(0, 1, 1));
 
+	barrel_model.get_transform()->set_position(glm::vec3(0, 0, 1));
+	barrel_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+	barrel_model.get_transform()->set_scale(glm::vec3(0.025f));
 
+	cube_model.get_transform()->set_position(glm::vec3(2, 0.5f, 0));
+
+	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+	floor_model.get_transform()->set_scale(glm::vec3(5, 5, 1));
+	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(5,5), glm::vec2(0,0) };
 	
 	#pragma endregion
 
@@ -719,95 +757,14 @@ int main()
 	{
 		process_input(window);
 
-		glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
-
-		//point_lights[0].get_transform()->set_position(cam.get_transform()->position());
-		
-		point_shadow_fb.bind();
-		clear_depth_buffer();
-		//clear_color_buffer();
-		
-		glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 25.0f);
-
-		glm::vec3 pos = point_lights[0].get_transform()->position();
-		std::vector<glm::mat4> shadow_view_matrices;
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(-1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 1.0)));
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, -1.0, 0.0), glm::vec3(0.0, 0.0, -1.0)));
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, -1.0, 0.0)));
-		shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, -1.0), glm::vec3(0.0, -1.0, 0.0)));
-
-		point_shadow_shader_program.use();
-		point_shadow_shader_program.set_float("farPlane", 25.0f);
-		point_shadow_shader_program.set_vec3("lightPos", pos);
-		point_shadow_shader_program.set_matrix("lightProj", proj);
-		for (size_t i = 0; i < shadow_view_matrices.size(); i++)
-		{
-			point_shadow_shader_program.set_matrix(std::string("lightView[").append(std::to_string(i).append("]")), shadow_view_matrices[i]);
-		}
-
-		/*glm::mat4 loaded_model_matrix = glm::mat4(1);
-		loaded_model_matrix = glm::translate(loaded_model_matrix, glm::vec3(0, 0, 0));
-		loaded_model_matrix = glm::scale(loaded_model_matrix, glm::vec3(0.05f));
-		loaded_model_matrix = glm::rotate(loaded_model_matrix, glm::radians(90.0f), glm::vec3(0, 0, 1));*/
-		point_shadow_shader_program.set_matrix("model", mvp_loaded_model.model_matrix);
-
-		texture::activate(GL_TEXTURE0);
-		point_shadow_depth_tex.bind();
-		glCullFace(GL_FRONT);
-		loaded_model.draw_shadow(point_shadow_shader_program);
-		glCullFace(GL_BACK);
-
-		glm::mat4 cube_model_matrix = glm::mat4(1);
-		cube_model_matrix = glm::translate(cube_model_matrix, glm::vec3(2, 0.5f, 0));
-		point_shadow_shader_program.set_matrix("model", cube_model_matrix);
-		glCullFace(GL_BACK);
-		set_depth_testing(true);
-		set_depth_writing(true);
-		cube_shadow_renderer.draw(point_shadow_shader_program);
-		glCullFace(GL_FRONT);
-
-		frame_buffer::unbind(); // render scene to omni directional shadow map // render scene to omnidirectional shadow map
-		
-		glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
-		shadow_fb.bind();
-
-		clear_depth_buffer();
-
-		mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
-		mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
-		
-		mvp_matrix.model_matrix = mvp_loaded_model.model_matrix;
-		
-		shadow_shader_program.use();
-		shadow_shader_program.set_mvp(mvp_matrix);
-
-		glCullFace(GL_FRONT);
-		loaded_model.draw_shadow(shadow_shader_program);
-		glCullFace(GL_BACK);
-
-		mvp_matrix.model_matrix = cube_model_matrix;
-		shadow_shader_program.set_matrix("model", mvp_matrix.model_matrix);
-		cube_shadow_renderer.draw(shadow_shader_program);
-
-		/*mvp_matrix.model_matrix = glm::mat4(1);
-		mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
-		mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
-		mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
-		shadow_shader_program.set_mvp(mvp_matrix);
-		floor_shadow_renderer.draw(shadow_shader_program);*/
-		
-		frame_buffer::unbind(); // render scene to directional shadow map
+		//shadow pass
+		render_omnidirectional_shadow_map(game_models, point_shadow_shader_program);
+		render_directional_shadow_map(game_models, shadow_shader_program);
 
 		glViewport(0, 0, config::WIDTH, config::HEIGHT);
-		
 		ms_fb.bind();
-		
-		clear_color_buffer();
-		clear_depth_buffer();
-		clear_stencil_buffer();
 
+		clear_frame();
 
 		set_depth_testing(true);
 		set_stencil_testing(true);
@@ -818,18 +775,16 @@ int main()
 		vp_ubo.buffer_data_range(0, sizeof(glm::mat4), glm::value_ptr(mvp_matrix.view));
 		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection));
 
-		planet_shader_program.use();
-		planet_shader_program.set_matrix("model", cube_model_matrix);
-		cube_renderer.draw(planet_shader_program);
-		
+		render_model(cube_model, tiling_and_offset(), planet_shader_program);
 		render_light_sources(cube_renderer, light_shader_program);
-		render_floor(floor_renderer, basic_shader_program);
-		render_model(loaded_model, basic_shader_program);
+		render_model(barrel_model, tiling_and_offset(), basic_shader_program);
+		render_model(floor_model, floor_tiling_and_offset, basic_shader_program_2);
+		render_skybox(skybox_renderer, skybox_shader_program);
+
+		
 		//render_planet(planet, planet_shader_program);
 		//render_asteroids(asteroid, asteroid_shader_program);
-		render_skybox(skybox_renderer, skybox_shader_program);
 		//render_transparent_quads(quad_renderer, transparent_shader_program);
-		//render_model_outline(backpack, outline_shader_program);
 		
 		frame_buffer::unbind(); // render normally, with multi sampling
 
@@ -840,11 +795,7 @@ int main()
 		
 		frame_buffer::unbind(); // blit to quad
 
-		
-		clear_color_buffer();
-		clear_depth_buffer();
-		clear_stencil_buffer();
-		
+		clear_frame();
 		render_pp_quad(screen_space_quad_renderer, screen_space_shader_program);
 		render_debug_windows();
 		
@@ -881,6 +832,13 @@ void clear_stencil_buffer()
 {
 	glClearStencil(0);
 	glClear(GL_STENCIL_BUFFER_BIT);
+}
+
+void clear_frame()
+{
+	clear_color_buffer();
+	clear_depth_buffer();
+	clear_stencil_buffer();
 }
 
 void enable_depth_testing()
@@ -929,18 +887,13 @@ void set_stencil_writing(const bool flag)
 	glStencilMask(flag ? 0xFF : 0x00);
 }
 
-
-
-
-
 #pragma endregion
 
 #pragma region Render Functions
 
 void render_light_sources(const renderer& rend, const shader_program& light_shader_program)
 {
-	//std::cout << "Dir light is active? " << (dir_light.is_active ? "true" : "false") << std::endl;
-	
+	set_depth_writing(true);
  	for (int i = 0; i < 4; i++)
 	{
 		light_shader_program.use();
@@ -960,7 +913,6 @@ void render_light_sources(const renderer& rend, const shader_program& light_shad
 
 		rend.draw(light_shader_program);
 	}
-	set_depth_writing(true);
 }
 
 void render_model(model &m, const shader_program &program)
@@ -968,15 +920,13 @@ void render_model(model &m, const shader_program &program)
 	set_depth_writing(true);
 	set_depth_testing(true);
 	set_stencil_writing(true);
-	//set_stencil_testing(true);
+	set_stencil_testing(false);
 	
 	program.use();
 	program.set_float("useShadow", use_shadow ? 1 : 0);
 	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
 	program.set_float("useParallax", use_parallax ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
-	program.set_vec3("tiling", glm::vec3(1));
-	program.set_vec3("offset", glm::vec3(0));
 	
 	send_point_lights_to_shader(program);
 	send_dir_light_to_shader(program);
@@ -984,9 +934,69 @@ void render_model(model &m, const shader_program &program)
 	send_material_data_to_shader(program);
 	
 
-	mvp_matrix.model_matrix = mvp_loaded_model.model_matrix;
+	program.set_model(m.get_transform()->get_model_matrix());
+
+	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
+	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
+
+	/*glActiveTexture(GL_TEXTURE8);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_tex.get_id());
+	program.set_int("mat.reflectionTexture0", 8);*/
+
+	glActiveTexture(GL_TEXTURE7);
+	glBindTexture(GL_TEXTURE_2D, shadow_depth_tex.get_id());
+	program.set_int("mat.shadowMap0", 7);
+
+	glActiveTexture(GL_TEXTURE8);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_depth_tex.get_id());
+	program.set_int("pointShadowMap", 8);
+	program.set_float("farPlane", 25.0f);
+	program.set_vec3("pointLights[0].lightPos", point_lights[0].get_transform()->position());
+
+	program.set_float("shouldReceiveShadow", 0);
+
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	set_stencil_writing(true);
+	m.draw(program);
+
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	//glStencilMask(0x00);
+}
+
+void render_model(model& m, const tiling_and_offset& tiling_and_offset, const shader_program& program)
+{
+	program.use();
+	program.set_tiling_and_offset(tiling_and_offset);
+	render_model(m, program);
+}
+
+void render_cabin(model& m, const shader_program& program)
+{
+	set_depth_writing(true);
+	set_depth_testing(true);
+	set_stencil_writing(true);
+	//set_stencil_testing(true);
+
+	program.use();
+	program.set_float("useShadow", use_shadow ? 1 : 0);
+	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
+	program.set_float("useParallax", use_parallax ? 1 : 0);
+	program.set_vec3("viewPos", cam.get_transform()->position());
+	program.set_vec3("tiling", glm::vec3(1));
+	program.set_vec3("offset", glm::vec3(0));
+
+	send_point_lights_to_shader(program);
+	send_dir_light_to_shader(program);
+	send_spot_light_to_shader(program);
+	send_material_data_to_shader(program);
+
+
+	mvp_matrix.model_matrix = glm::mat4(1);
 	program.set_mvp(mvp_matrix);
 
+	//needed for shadow mapping
 	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
 	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
 
@@ -1096,7 +1106,7 @@ void render_floor(const renderer& rend, const shader_program& program)
 	send_material_data_to_shader(program);
 
 	mvp_matrix.model_matrix = glm::mat4(1);
-	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, -2));
+	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
 	mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians( -90.0f), glm::vec3(1, 0, 0));
 	mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
 	program.set_mvp(mvp_matrix);
@@ -1170,6 +1180,102 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	program.set_vec2_array("offsets", 9, &kernel.offset[0].x);
 	screen_space_quad_renderer.draw(program);
 	rend.draw(program);
+}
+
+void render_directional_shadow_map(std::vector<model>& models, const shader_program& program)
+{
+	glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
+	shadow_fb.bind();
+
+	clear_depth_buffer();
+
+	mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
+	mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
+
+	program.use();
+	program.set_view(mvp_matrix.view);
+	program.set_proj(mvp_matrix.projection);
+
+	glCullFace(GL_FRONT);
+
+	for (auto value : models)
+	{
+		program.set_model(value.get_transform()->get_model_matrix());
+		value.draw_shadow(program);
+	}
+
+	/*for (auto shadow_renderer : rend)
+	{
+		
+	}
+
+	rend[0].draw(program);*/
+	glCullFace(GL_BACK);
+
+	frame_buffer::unbind(); // render scene to directional shadow map
+}
+
+void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program &program)
+{
+	glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
+
+	point_shadow_fb.bind();
+	clear_depth_buffer();
+	clear_color_buffer();
+
+	const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 25.0f);
+
+	const glm::vec3 pos = point_lights[0].get_transform()->position();
+	std::vector<glm::mat4> shadow_view_matrices;
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(-1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 1.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, -1.0, 0.0), glm::vec3(0.0, 0.0, -1.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, -1.0, 0.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, -1.0), glm::vec3(0.0, -1.0, 0.0)));
+
+	program.use();
+	program.set_float("farPlane", 25.0f);
+	program.set_vec3("lightPos", pos);
+	program.set_matrix("lightProj", proj);
+	
+	for (size_t i = 0; i < shadow_view_matrices.size(); i++)
+	{
+		program.set_matrix(std::string("lightView[").append(std::to_string(i).append("]")), shadow_view_matrices[i]);
+	}
+
+	/*glm::mat4 loaded_model_matrix = glm::mat4(1);
+	loaded_model_matrix = glm::translate(loaded_model_matrix, glm::vec3(0, 0, 0));
+	loaded_model_matrix = glm::scale(loaded_model_matrix, glm::vec3(0.05f));
+	loaded_model_matrix = glm::rotate(loaded_model_matrix, glm::radians(90.0f), glm::vec3(0, 0, 1));*/
+
+	glCullFace(GL_FRONT);
+	for (std::vector<model>::value_type& value : models)
+	{
+		program.set_model(value.get_transform()->get_model_matrix());
+		value.draw_shadow(program);
+		
+	}
+	glCullFace(GL_BACK);
+	
+	//point_shadow_shader_program.set_matrix("model", mvp_loaded_model.model_matrix);
+
+	//texture::activate(GL_TEXTURE0);
+	//point_shadow_depth_tex.bind();
+	/*glCullFace(GL_FRONT);
+	barrel_model.draw_shadow(point_shadow_shader_program);
+	glCullFace(GL_BACK);
+
+	glm::mat4 cube_model_matrix = glm::mat4(1);
+	cube_model_matrix = glm::translate(cube_model_matrix, glm::vec3(2, 0.5f, 0));
+	point_shadow_shader_program.set_matrix("model", cube_model_matrix);
+	glCullFace(GL_BACK);
+	set_depth_testing(true);
+	set_depth_writing(true);
+	cube_shadow_renderer.draw(point_shadow_shader_program);
+	glCullFace(GL_FRONT);*/
+
+	frame_buffer::unbind(); // render scene to omni directional shadow map // render scene to omnidirectional shadow map
 }
 
 void render_debug_windows()

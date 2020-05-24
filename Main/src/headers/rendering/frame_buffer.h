@@ -6,7 +6,8 @@ class frame_buffer
 {
 public:
 	frame_buffer();
-	
+
+	void generate();
 	void bind() const;
 	static void attach_texture_2d(const unsigned int tex_id, const GLenum attachment, const bool is_multi_sampled);
 	static void attach_texture(const texture& tex, const GLenum attachment);

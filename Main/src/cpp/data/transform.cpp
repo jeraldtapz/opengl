@@ -47,6 +47,10 @@ void transform::recalculate_directions()
 glm::mat4 transform::get_model_matrix() const
 {
 	auto model = glm::mat4(1.0f);
+
+	//order is actually scale -> rotate -> translate
+	//glm matrices
+	
 	model = glm::translate(model, this->position());
 	model = glm::rotate(model, glm::radians(_rotation.x), right_basis);
 	model = glm::rotate(model, glm::radians(_rotation.y), up_basis);

@@ -8,16 +8,19 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 
+
+#include "engine/game_object.h"
 #include "rendering/instanced_renderer.h"
 #include "shadow/shadow_renderer.h"
 
 
-class model
+class model : public game_object
 {
 public:
 	explicit model(const std::string& path, bool auto_load);
 	explicit model(const std::string &path,  bool auto_load, void* data, const unsigned int buffer_size);
 	explicit model(const std::string& path, bool auto_load, bool is_shadow);
+	explicit model(const std::vector<mesh> &meshes);
 	void draw(const shader_program& program);
 	void draw_instanced(const shader_program &program, const unsigned int count);
 	void draw_shadow(const shader_program& program);

@@ -239,6 +239,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClInclude Include="src\headers\data\mesh.h" />
     <ClInclude Include="src\headers\data\model.h" />
     <ClInclude Include="src\headers\data\mvp.h" />
+    <ClInclude Include="src\headers\data\tiling_and_offset.h" />
     <ClInclude Include="src\headers\data\transform.h" />
     <ClInclude Include="src\headers\engine\camera.h" />
     <ClInclude Include="src\headers\engine\game_object.h" />

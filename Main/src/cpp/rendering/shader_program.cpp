@@ -1,6 +1,7 @@
 #include "rendering/shader_program.h"
 #include <glm/gtc/type_ptr.hpp>
 
+//TODO implement caching of uniform locations
 shader_program::shader_program(const shader* vertex_shader, const shader* fragment_shader) :
 	vertex_shader(vertex_shader),
 	fragment_shader(fragment_shader), geometry_shader(nullptr)
@@ -82,6 +83,12 @@ void shader_program::set_matrix(const std::string& name, const glm::mat4 matrix)
 	glUniformMatrix4fv(glGetUniformLocation(id, name.c_str()), 1, GL_FALSE, glm::value_ptr(matrix));
 }
 
+void shader_program::set_vec2(const std::string& name, const glm::vec2 value) const
+{
+	glUniform2f(glGetUniformLocation(id, name.c_str()), value.x, value.y);
+}
+
+
 void shader_program::set_vec3(const std::string& name, const glm::vec3 value) const
 {
 	glUniform3f(glGetUniformLocation(id, name.c_str()), value.x, value.y, value.z);
@@ -104,7 +111,29 @@ void shader_program::set_vec2_array(const std::string& name, const unsigned int 
 
 void shader_program::set_mvp(const mvp matrix) const
 {
-	set_matrix("model", matrix.model_matrix);
-	set_matrix("view", matrix.view);
-	set_matrix("projection", matrix.projection);
+	set_model(matrix.model_matrix);
+	set_view(matrix.view);
+	set_proj(matrix.projection);
 }
+
+void shader_program::set_model(const glm::mat4 matrix) const
+{
+	set_matrix("model", matrix);
+}
+
+void shader_program::set_view(const glm::mat4 matrix) const
+{
+	set_matrix("view", matrix);
+}
+
+void shader_program::set_proj(const glm::mat4 matrix) const
+{
+	set_matrix("projection", matrix);
+}
+
+void shader_program::set_tiling_and_offset(const tiling_and_offset& tiling_and_offset) const
+{
+	set_vec2("tiling", tiling_and_offset.tiling);
+	set_vec2("offset", tiling_and_offset.offset);
+}
+

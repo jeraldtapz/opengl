@@ -267,6 +267,9 @@
     <ClInclude Include="src\headers\shadow\shadow_renderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\headers\data\tiling_and_offset.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="src\resources\wall.jpg">

@@ -30,6 +30,28 @@ model::model(const std::string& path, const bool auto_load, const bool is_shadow
 		load_model(path);
 }
 
+model::model(const std::vector<mesh>& meshes)
+{
+	is_model_loaded = true;
+	this->is_instanced = false;
+
+	for (const auto& m : meshes)
+	{
+		this->meshes.push_back(m);
+
+		if (is_instanced)
+		{
+			instanced_renderer instanced_rnd = instanced_renderer(std::make_shared<mesh>(m), this->data, this->buffer_size);
+			instanced_renderers.push_back(instanced_rnd);
+		}
+
+		shadow_renderer shadow_rnd = shadow_renderer(std::make_shared<mesh>(m));
+		shadow_renderers.push_back(shadow_rnd);
+
+		renderers.emplace_back(std::make_shared<mesh>(m));
+	}
+}
+
 
 void model::load(const std::string &path)
 {
