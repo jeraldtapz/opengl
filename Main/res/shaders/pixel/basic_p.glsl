@@ -70,21 +70,19 @@ vec3 CalculateReflectionContrib();
 float CalculateDirectionalShadow();
 float CalculatePointShadow();
 
-
-in vec3 FragPos;
+in DirLight DirLightTangent;
+in PointLight PointLightsTangent[4];
+in SpotLight SpotLightTangent;
+in vec3 ViewPosTangent;
+in vec3 FragPosTangent;
 in vec2 TexCoord;
-in vec3 Normal;
+in vec3 NormalTangent;
+in vec4 FragPosDirLightSpace;
 in mat3 TBN;
-in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
 
 uniform Material mat;
-uniform DirLight dirLight;
-uniform SpotLight spotLight;
-uniform PointLight pointLights[NR_PT_LIGHTS];
-
-uniform vec3 viewPos;
 uniform vec3 ambientColor;
 uniform float time;
 uniform float isFlashlightOn;
@@ -103,16 +101,16 @@ void main()
 
 	for(int i = 0; i < NR_PT_LIGHTS; i++)
 	{
-		pointLightContrib += CalculatePointLight(pointLights[i]);
+		pointLightContrib += CalculatePointLight(PointLightsTangent[i]);
 	}
 	vec3 dirLightContrib = CalculateDirectionalLight();
-	vec3 spotLightContrib = CalculateSpotLightContrib(spotLight) * isFlashlightOn;
+	vec3 spotLightContrib = CalculateSpotLightContrib(SpotLightTangent) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 //	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
 	float pointShadow = CalculatePointShadow() * useShadow;
 	float dirShadow = CalculateDirectionalShadow() * useShadow;
 
-	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	vec3 fragToLight = FragPosTangent - PointLightsTangent[0].lightPos;
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
 
 	FragColor =  vec4(((1 - pointShadow) * pointLightContrib + (1 - dirShadow) * dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
@@ -124,21 +122,20 @@ vec3 CalculateDirectionalLight()
 {
 	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
-	vec3 fragToLight = -dirLight.lightDir;
+	vec3 fragToLight = -DirLightTangent.lightDir;
 
-	vec3 fragToView = normalize(viewPos - FragPos);
-	vec3 reflectedLightDir = reflect(dirLight.lightDir, normal);
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
+	vec3 reflectedLightDir = reflect(DirLightTangent.lightDir, normal);
 	vec3 halfwayDir = normalize(fragToView + fragToLight);
 
 	float diffuseStrength = max(dot(normal, fragToLight), 0);
-	vec3 diffuse = diffuseStrength * dirLight.diffuseColor * dirLight.diffuseIntensity * mat.diffuseColor;
+	vec3 diffuse = diffuseStrength * DirLightTangent.diffuseColor * DirLightTangent.diffuseIntensity * mat.diffuseColor;
 
 	float specularStrength = pow(max(dot(normal, halfwayDir), 0), mat.shininess);
-	vec3 specular = specularStrength * dirLight.specularColor * dirLight.specularIntensity * mat.specularColor;
+	vec3 specular = specularStrength * DirLightTangent.specularColor * DirLightTangent.specularIntensity * mat.specularColor;
 
 
 	vec3 diffColor = texture(mat.diffuseTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
@@ -153,17 +150,16 @@ vec3 CalculatePointLight(PointLight light)
 {
 	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
-	vec3 fragToLight = normalize(light.lightPos - FragPos);
+	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
 
-	vec3 fragToView = normalize(viewPos - FragPos);
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
 	vec3 reflectedLightDir = reflect(-fragToLight, normal);
 	vec3 halfwayDir = normalize(fragToLight + fragToView);
 
-	float distance = length(light.lightPos - FragPos);
+	float distance = length(light.lightPos - FragPosTangent);
 	float attenuation = 1.0f /(1 + distance * light.linear + distance * distance * light.quadratic);
 
 	float diffuseStrength = max(dot(normal, fragToLight), 0);
@@ -184,10 +180,10 @@ vec3 CalculateSpotLightContrib(SpotLight light)
 {
 	vec3 normal = texture(mat.normalTexture0, vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normalize(normal * 2 - 1.0);
-	normal = normalize(TBN * normal);
-	vec3 fragToLight = normalize(light.lightPos - FragPos);
 
-	vec3 fragToView = normalize(viewPos - FragPos);
+	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
+
+	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
 	vec3 reflectedLightDir = reflect(-fragToLight, normal);
 	vec3 halfwayDir = normalize(fragToLight + fragToView);
 
@@ -219,7 +215,7 @@ vec3 CalculateReflectionContrib()
 
 float CalculateDirectionalShadow()
 {
-	vec3 lightSpacePosProj = FragPosLightSpace.xyz/FragPosLightSpace.w;
+	vec3 lightSpacePosProj = FragPosDirLightSpace.xyz/FragPosDirLightSpace.w;
 	lightSpacePosProj = lightSpacePosProj * 0.5 + 0.5;
 
 	float closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy).r;
@@ -227,10 +223,10 @@ float CalculateDirectionalShadow()
 
 	vec3 normal = texture(mat.normalTexture0, TexCoord).rgb;
 	normal = normal * 2 - 1.0;
-	normal = normalize(TBN * normal);
-	normal = normalize(Normal);
 
-	vec3 fragToLight = normalize(-dirLight.lightDir);
+	normal = normalize(NormalTangent);
+
+	vec3 fragToLight = normalize(-DirLightTangent.lightDir);
 
 	float bias = max(0.0005 * (1.0 - dot(normal, fragToLight)), 0.00005);
 
@@ -254,17 +250,18 @@ float CalculateDirectionalShadow()
 
 float CalculatePointShadow()
 {
-	vec3 fragToLight = FragPos - pointLights[0].lightPos;
+	//convert back to world space because the shadow map was done in world space
+	vec3 fragToLight = TBN * (FragPosTangent - PointLightsTangent[0].lightPos);
+	
+
 	float closestDepth = texture(pointShadowMap, fragToLight).r;
 	closestDepth *= farPlane;
 
 	vec3 normal = texture(mat.normalTexture0, 
 	vec2(TexCoord.x * tiling.x, TexCoord.y * tiling.y)).rgb;
 	normal = normal * 2 - 1.0;
-//	normal = normalize(TBN * normal);
-//	normal = normalize(Normal);
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(Normal);
+	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	float bias = max(0.05 * (1.0 - dot(normal, normalize(fragToLight))), 0.005);
 	float currentDepth = length(fragToLight);
