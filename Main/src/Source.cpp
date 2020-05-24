@@ -104,6 +104,7 @@ bool is_flash_light_on = false;
 bool is_open;
 bool use_shadow = true;
 bool use_normal_maps = true;
+bool use_parallax = true;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -487,10 +488,11 @@ int main()
 
 	texture window_tex = texture(get_tex("window.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
 
-	texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
-
-	texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
+	texture floor_tex = texture(get_tex("floor2/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
+	floor_normal_tex = texture(get_tex("floor2/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
+	texture floor_height_tex = texture(get_tex("floor2/bricks_displacement.jpg"), texture_type::height, GL_UNSIGNED_BYTE, true);
+	
+	/*texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);*/
 
 	random_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false);
 	random_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
@@ -531,7 +533,7 @@ int main()
 	transparent_quad_mesh.is_indexed = false;
 	transparent_quad_mesh.should_cull_face = false;
 
-	std::vector<texture> floor_textures = { floor_tex ,floor_spec_tex , floor_normal_tex };
+	std::vector<texture> floor_textures = { floor_tex, floor_normal_tex , floor_height_tex };
 	mesh floor_mesh = mesh(quad_vertices, floor_textures);
 	floor_mesh.is_indexed = false;
 	floor_mesh.should_cull_face = false;
@@ -971,8 +973,11 @@ void render_model(model &m, const shader_program &program)
 	program.use();
 	program.set_float("useShadow", use_shadow ? 1 : 0);
 	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
+	program.set_float("useParallax", use_parallax ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
 	program.set_vec3("tiling", glm::vec3(1));
+	program.set_vec3("offset", glm::vec3(0));
+	
 	send_point_lights_to_shader(program);
 	send_dir_light_to_shader(program);
 	send_spot_light_to_shader(program);
@@ -1083,6 +1088,7 @@ void render_floor(const renderer& rend, const shader_program& program)
 	program.use();
 	program.set_float("useShadow", use_shadow ? 1 : 0);
 	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
+	program.set_float("useParallax", use_parallax ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
 	send_point_lights_to_shader(program);
 	send_dir_light_to_shader(program);
@@ -1095,6 +1101,7 @@ void render_floor(const renderer& rend, const shader_program& program)
 	mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
 	program.set_mvp(mvp_matrix);
 	program.set_vec3("tiling", glm::vec3(5));
+	program.set_vec3("offset", glm::vec3(0));
 
 	glActiveTexture(GL_TEXTURE7);
 	glBindTexture(GL_TEXTURE_2D, shadow_depth_tex.get_id());
@@ -1215,6 +1222,7 @@ void render_debug_windows()
 
 	ImGui::Checkbox("Use Shadows", &use_shadow);
 	ImGui::Checkbox("Use Normal Maps", &use_normal_maps);
+	ImGui::Checkbox("Use Parallax Mapping", &use_parallax);
 	
 	if (ImGui::TreeNode("Basic Lights"))
 	{

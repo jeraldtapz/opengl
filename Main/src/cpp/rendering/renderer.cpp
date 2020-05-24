@@ -107,6 +107,7 @@ void renderer::draw_instanced(const shader_program& program, const unsigned int 
 	unsigned int specular_number = -1;
 	unsigned int reflection_number = -1;
 	unsigned int normal_number = -1;
+	unsigned int height_number = -1;
 
 	std::string setting_name;
 	std::string texture_type_str;
@@ -139,6 +140,11 @@ void renderer::draw_instanced(const shader_program& program, const unsigned int 
 		case texture_type::reflection:
 		{
 			number = std::to_string(++reflection_number);
+			break;
+		}
+		case texture_type::height:
+		{
+			number = std::to_string(++height_number);
 			break;
 		}
 		case texture_type::color:

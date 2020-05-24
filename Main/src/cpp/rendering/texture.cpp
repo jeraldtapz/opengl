@@ -27,7 +27,7 @@ texture::texture(const std::string& absolute_path, const texture_type type, cons
 	int temp_height;
 	int temp_number_of_channels;
 
-	//stbi_set_flip_vertically_on_load(true);
+	stbi_set_flip_vertically_on_load(true);
 	stbi_uc* const data = stbi_load(absolute_path.c_str(), &temp_width, &temp_height, &temp_number_of_channels, 0);
 
 	if(data)
@@ -313,6 +313,7 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
 		case texture_type::cube: return "cube";
+		case texture_type::height: return "height";
 	default: return "error";
 	}
 }
