@@ -7,8 +7,10 @@ in vec2 TexCoord;
 out vec4 FragColor;
 
 uniform sampler2D screenColor;
+uniform sampler2D bloomBlur;
 uniform float useHDR;
 uniform float useGammaCorrection;
+uniform float useBloom;
 
 
 uniform float kernel[9];
@@ -47,9 +49,14 @@ void main()
 
 	//hdr
 	vec3 c = texture(screenColor, TexCoord).rgb;
+	vec3 bloomColor = texture(bloomBlur, TexCoord).rgb;
+	c += useBloom * bloomColor;
+
+	//tonemapping
 	vec3 hdrColor = c / (c + vec3(1));
 	hdrColor = vec3(1.0) - exp(-c * exposure);
 	hdrColor = useHDR * hdrColor + (1 - useHDR) * c;
+
 
 	//gamma correction
 	float gamma = 2.2;

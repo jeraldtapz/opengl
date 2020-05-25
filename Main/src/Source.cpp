@@ -67,6 +67,7 @@ void render_skybox(const renderer& rend, const shader_program& program);
 void render_pp_quad(const renderer& rend, const shader_program& program);
 void render_directional_shadow_map(std::vector<model> &models, const shader_program& program);
 void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program& program);
+void bloom_postprocess(const renderer& rend, unsigned int attachments[], const shader_program& bloom_brightness, const shader_program& blur);
 
 void send_dir_light_to_shader(const shader_program& program);
 void send_point_lights_to_shader(const shader_program& program);
@@ -89,20 +90,29 @@ void render_debug_windows();
 
 #pragma region utility variables
 
+#pragma region CONSTANTS
+
 const unsigned int ASTEROID_COUNT = 1000;
 const unsigned int SHADOW_RESOLUTION = 2048;
 
+#pragma endregion
+
+#pragma region Movement and Framing
 
 camera cam = camera(45.0f, 0.1f, 200.0f);
 float last_frame = 0.0f;
 float delta_time = 0.0f;
 double last_x = config::WIDTH * 0.5;
 double last_y = config::HEIGHT * 0.5;
-
 float key_press_cooldown = 0.25f;
 float last_cursor_swap = 0.0f;
 float last_flash_light_swap = 0.0f;
+
+#pragma endregion
+
+
 float hdr_exposure = 1.0f;
+float brightness_threshold = 2.0f;
 
 int cursor_mode = GLFW_CURSOR_NORMAL;
 bool first_mouse;
@@ -113,6 +123,7 @@ bool use_normal_maps = true;
 bool use_parallax = true;
 bool use_gamma_correction = true;
 bool use_hdr = true;
+bool use_bloom = true;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -142,10 +153,12 @@ const unsigned int SAMPLES = 8;
 texture ms_color_tex, ms_depth_tex, shadow_depth_tex, point_shadow_depth_tex;
 texture hdr_color_tex;
 
-texture random_fb_color_tex, random_fb_depth_tex, random_fb_stencil_tex, random_fb_depth_stencil_tex;
+texture debug_fb_color_tex, debug_fb_depth_tex, debug_fb_stencil_tex;
+texture bloom_fb_color_tex, bloom_fb_brightness_tex, pingpong_color_tex[2];
+texture destination_fb_color_tex, destination_fb_depth_tex, destination_fb_stencil_tex;
+
 texture container_diff_tex;
 texture skybox_tex;
-
 texture floor_normal_tex;
 
 
@@ -153,6 +166,7 @@ texture floor_normal_tex;
 std::vector<model> game_models;
 
 renderer cube_renderer, screen_space_quad_renderer, rear_quad_renderer, skybox_renderer, floor_renderer;
+renderer screen_space_raw_quad_renderer;
 transparent_renderer quad_renderer;
 
 shadow_renderer floor_shadow_renderer, cube_shadow_renderer;
@@ -160,9 +174,12 @@ shadow_renderer floor_shadow_renderer, cube_shadow_renderer;
 
 frame_buffer shadow_fb = frame_buffer();
 frame_buffer point_shadow_fb = frame_buffer();
-frame_buffer random_fb = frame_buffer();
+frame_buffer bloom_fb = frame_buffer();
 frame_buffer ms_fb = frame_buffer();
 frame_buffer hdr_fb = frame_buffer();
+frame_buffer destination_fb = frame_buffer();
+frame_buffer debug_fb = frame_buffer();
+frame_buffer pingpong_fb[] = { frame_buffer(), frame_buffer() };
 
 uniform_buffer_object vp_ubo;
 
@@ -479,6 +496,12 @@ int main()
 	shader point_shadow_shader_pixel = shader("point_shadow_p", GL_FRAGMENT_SHADER);
 	shader point_shadow_shader_geometry = shader("point_shadow_g", GL_GEOMETRY_SHADER);
 
+	shader bloom_brightness_shader_vertex = shader("bloom_brightness_v", GL_VERTEX_SHADER);
+	shader bloom_brightness_shader_pixel = shader("bloom_brightness_p", GL_FRAGMENT_SHADER);
+
+	shader blur_shader_vertex = shader("blur_v", GL_VERTEX_SHADER);
+	shader blur_shader_pixel = shader("blur_p", GL_FRAGMENT_SHADER);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -492,6 +515,8 @@ int main()
 	shader_program asteroid_shader_program = shader_program(&asteroid_shader_vertex, &asteroid_shader_pixel);
 	shader_program shadow_shader_program = shader_program(&shadow_shader_vertex, &shadow_shader_pixel);
 	shader_program point_shadow_shader_program = shader_program(&point_shadow_shader_vertex, &point_shadow_shader_pixel, &point_shadow_shader_geometry);
+	shader_program bloom_brightness_shader_program = shader_program(&bloom_brightness_shader_vertex, &bloom_brightness_shader_pixel);
+	shader_program blur_shader_program = shader_program(&blur_shader_vertex, &blur_shader_pixel);
 	
 	#pragma endregion
 
@@ -516,15 +541,18 @@ int main()
 	
 	texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
 
-	random_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	random_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
+	//basically unnecessary
+	bloom_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	bloom_fb_brightness_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
 
-	random_fb_stencil_tex = texture(texture_type::stencil, config::WIDTH, config::HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX8, GL_UNSIGNED_BYTE, false);
+	for(int i = 0; i < 2; i++)
+		pingpong_color_tex[i] = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, true);
 
-	random_fb_depth_stencil_tex = texture(texture_type::depth_stencil, config::WIDTH, config::HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH24_STENCIL8, GL_UNSIGNED_INT_24_8, false);
+	debug_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	debug_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
+	/*debug_fb_stencil_tex = texture(texture_type::stencil, config::WIDTH, config::HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, false);*/
 
 	ms_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false, SAMPLES);
-
 	ms_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
 
 	hdr_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
@@ -533,7 +561,9 @@ int main()
 
 	point_shadow_depth_tex = texture(texture_type::cube, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 	
-
+	destination_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	destination_fb_depth_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+	/*destination_fb_stencil_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, false);*/
 
 	skybox_tex = texture(skybox_texture_paths, texture_type::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
 	
@@ -563,11 +593,15 @@ int main()
 	floor_mesh.is_indexed = false;
 	floor_mesh.should_cull_face = false;
 
-	std::vector<texture> screen_space_quad_textures = { random_fb_color_tex };
+	std::vector<texture> screen_space_quad_textures = { destination_fb_color_tex };
 	mesh ss_quad_mesh = mesh{ quad_vertices, quad_indices, screen_space_quad_textures };
 	ss_quad_mesh.is_indexed = false;
 	ss_quad_mesh.should_cull_face = false;
 
+	mesh ss_raw_quad_mesh = mesh{ quad_vertices };
+	ss_quad_mesh.is_indexed = false;
+	ss_quad_mesh.should_cull_face = true;
+	
 	mesh rear_quad_mesh = mesh{ rear_quad_vertices, quad_indices, screen_space_quad_textures };
 	rear_quad_mesh.is_indexed = false;
 	rear_quad_mesh.should_cull_face = false; //meshes
@@ -582,6 +616,7 @@ int main()
 	skybox_renderer = renderer(std::make_shared<mesh>(skybox_cube_mesh));
 	quad_renderer = transparent_renderer(std::make_shared<mesh>(transparent_quad_mesh));
 	screen_space_quad_renderer = renderer(std::make_shared<mesh>(ss_quad_mesh));
+	screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(ss_raw_quad_mesh));
 	rear_quad_renderer = renderer(std::make_shared<mesh>(rear_quad_mesh));
 	floor_renderer = renderer(std::make_shared<mesh>(floor_mesh));
 
@@ -643,12 +678,28 @@ int main()
 	std::cout << "frame buffer with multi sampled color and depth texture " << frame_buffer::validate() << std::endl;;
 	frame_buffer::unbind(); // Multi sampled fb
 	
-	random_fb.generate();
-	random_fb.bind();
-	frame_buffer::attach_texture_2d(random_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
-	frame_buffer::attach_texture_2d(random_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
+	bloom_fb.generate();
+	bloom_fb.bind();
+	frame_buffer::attach_texture_2d(bloom_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
+	frame_buffer::attach_texture_2d(bloom_fb_brightness_tex.get_id(), GL_COLOR_ATTACHMENT1, false);
 
-	frame_buffer::unbind(); // random_fb
+	unsigned int bloom_attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	
+	std::cout << "Bloom Frame buffer " << frame_buffer::validate() << std::endl;
+	
+	frame_buffer::unbind(); // bloom fb
+
+	for(int i = 0; i < 2; i++)
+	{
+		pingpong_fb[i].generate();
+		pingpong_fb[i].bind();
+
+		frame_buffer::attach_texture_2d(pingpong_color_tex[i].get_id(), GL_COLOR_ATTACHMENT0, false);
+
+		std::cout << "Pingpong texture " << std::to_string(i) << ", " << frame_buffer::validate() << std::endl;
+
+		frame_buffer::unbind();
+	} // pingpong fb
 
 	shadow_fb.generate();
 	shadow_fb.bind();
@@ -678,7 +729,25 @@ int main()
 
 	frame_buffer::unbind(); // hdr fb
 
-	
+	debug_fb.generate();
+	debug_fb.bind();
+
+	frame_buffer::attach_texture_2d(debug_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
+	frame_buffer::attach_texture_2d(debug_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
+
+	std::cout << "Debug Frame Buffer " << frame_buffer::validate() << std::endl;
+	frame_buffer::unbind(); // debug fb
+
+	destination_fb.generate();
+	destination_fb.bind();
+
+	frame_buffer::attach_texture_2d(destination_fb_color_tex.get_id(), GL_COLOR_ATTACHMENT0, false);
+	frame_buffer::attach_texture_2d(destination_fb_depth_tex.get_id(), GL_DEPTH_ATTACHMENT, false);
+
+	std::cout << "Destination Frame Buffer " << frame_buffer::validate() << std::endl;
+
+	frame_buffer::unbind(); //destination fb
+
 	vp_ubo = uniform_buffer_object(2 * sizeof(glm::mat4), GL_STATIC_DRAW);
 
 	//bind ubo to binding point 1
@@ -804,12 +873,25 @@ int main()
 		frame_buffer::unbind(); // render normally, with HDR
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, use_hdr ? hdr_fb.get_id() : ms_fb.get_id());
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, random_fb.get_id());
+
+		//blit to bloom buffer
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bloom_fb.get_id());
+		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination_fb.get_id());
 		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 		
-		frame_buffer::unbind(); // blit to quad
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, debug_fb.get_id());
+		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+		
+		frame_buffer::unbind(); // blit
 
+		bloom_postprocess(screen_space_raw_quad_renderer, bloom_attachments, bloom_brightness_shader_program, blur_shader_program);
+		
 		clear_frame();
 		render_pp_quad(screen_space_quad_renderer, screen_space_shader_program);
 		render_debug_windows();
@@ -1190,7 +1272,11 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	program.set_float("exposure", hdr_exposure);
 	program.set_float("useGammaCorrection", use_gamma_correction ? 1 : 0);
 	program.set_float("useHDR", use_gamma_correction ? 1 : 0);
-	screen_space_quad_renderer.draw(program);
+
+	glActiveTexture(GL_TEXTURE1);
+	pingpong_color_tex[1].bind();
+	program.set_int("bloomBlur", 1);
+	program.set_float("useBloom", use_bloom ? 1 : 0);
 	rend.draw(program);
 }
 
@@ -1290,6 +1376,54 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	frame_buffer::unbind(); // render scene to omni directional shadow map // render scene to omnidirectional shadow map
 }
 
+void bloom_postprocess(const renderer& rend, unsigned int attachments[], const shader_program &bloom_brightness, const shader_program &blur)
+{
+	bloom_fb.bind();
+	glDrawBuffers(2, attachments);
+	
+	bloom_brightness.use();
+	glBindTexture(GL_TEXTURE_2D, bloom_fb_color_tex.get_id());
+	bloom_brightness.set_float("useBloom", use_bloom);
+	bloom_brightness.set_float("brightnessThreshold", brightness_threshold);
+	rend.draw(bloom_brightness);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, bloom_fb_brightness_tex.get_id());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pingpong_fb[0].get_id());
+	glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	frame_buffer::unbind();
+
+	bool horizontal = true, first_iteration = true;
+	const int amount = 10;
+
+	blur.use();
+
+	for(int i = 0; i < amount; i++)
+	{
+		pingpong_fb[horizontal].bind();
+
+		//redundant but here to be more explicit
+		glActiveTexture(GL_TEXTURE0);
+
+		if (first_iteration)
+			pingpong_color_tex[0].bind();
+		else
+			pingpong_color_tex[!horizontal].bind();
+		
+
+		blur.set_float("isHorizontal", horizontal);
+		blur.set_int("image", 0);
+
+		rend.draw(blur);
+		
+		horizontal = !horizontal;
+		if (first_iteration)
+			first_iteration = false;
+	}
+
+	frame_buffer::unbind();
+}
+
 void render_debug_windows()
 {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -1301,10 +1435,13 @@ void render_debug_windows()
 
 	ImGui::Begin("Debug Textures");
 
-	const ImTextureID color_tex_id = reinterpret_cast<void*>(random_fb_color_tex.get_id());  // NOLINT(misc-misplaced-const)
-	const ImTextureID depth_tex_id = reinterpret_cast<void*>(random_fb_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID color_tex_id = reinterpret_cast<void*>(debug_fb_color_tex.get_id());  // NOLINT(misc-misplaced-const)
+	const ImTextureID depth_tex_id = reinterpret_cast<void*>(debug_fb_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
 	const ImTextureID shadow_tex_id = reinterpret_cast<void*>(shadow_depth_tex.get_id()); // NOLINT(misc-misplaced-const)
-	const ImTextureID floor_normal_tex_id = reinterpret_cast<void*>(floor_normal_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID bloom_color_tex_id = reinterpret_cast<void*>(bloom_fb_color_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID bloom_brightness_tex_id = reinterpret_cast<void*>(bloom_fb_brightness_tex.get_id()); // NOLINT(misc-misplaced-const)
+	const ImTextureID blur_brightness_tex_id_0 = reinterpret_cast<void*>(pingpong_color_tex[0].get_id());  // NOLINT(misc-misplaced-const)
+	const ImTextureID blur_brightness_tex_id_1 = reinterpret_cast<void*>(pingpong_color_tex[1].get_id());  // NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
@@ -1321,19 +1458,35 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
-	if(ImGui::TreeNode("Shadow"))
+	if(ImGui::TreeNode("Directional Shadow"))
 	{
 		ImGui::Image(shadow_tex_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
-	if(ImGui::TreeNode("Floor Normal"))
+	if(ImGui::TreeNode("Bloom FB Color"))
 	{
-
-		ImGui::Image(floor_normal_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::Image(bloom_color_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
+	if (ImGui::TreeNode("Bloom FB Brightness"))
+	{
+		ImGui::Image(bloom_brightness_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Blur Brightness 0"))
+	{
+		ImGui::Image(blur_brightness_tex_id_0, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Blur Brightness 1"))
+	{
+		ImGui::Image(blur_brightness_tex_id_1, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
 	
 
 	ImGui::End();
@@ -1345,10 +1498,12 @@ void render_debug_windows()
 	ImGui::Checkbox("Use Parallax Mapping", &use_parallax);
 	ImGui::Checkbox("Use HDR", &use_hdr);
 	ImGui::Checkbox("Use Gamma Correction", &use_gamma_correction);
+	ImGui::Checkbox("Use Bloom", &use_bloom);
 
 	ImGui::Spacing();
 
 	ImGui::SliderFloat("HDR Exposure", &hdr_exposure, 0, 10, "%.3f", 1.0f);
+	ImGui::SliderFloat("Brightness Threshold", &brightness_threshold, 1, 5, "%.3f", 1.0f);
 	
 	ImGui::Spacing();
 	
