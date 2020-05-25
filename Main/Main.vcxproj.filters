@@ -154,6 +154,10 @@
     <None Include="res\shaders\vertex\point_shadow_v.glsl" />
     <None Include="res\shaders\geometry\point_shadow_g.glsl" />
     <None Include="res\shaders\pixel\point_shadow_p.glsl" />
+    <None Include="res\shaders\vertex\bloom_brightness_v.glsl" />
+    <None Include="res\shaders\pixel\bloom_brightness_p.glsl" />
+    <None Include="res\shaders\vertex\blur_v.glsl" />
+    <None Include="res\shaders\pixel\blur_p.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">

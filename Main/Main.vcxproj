@@ -199,6 +199,8 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\geometry\point_shadow_g.glsl" />
     <None Include="res\shaders\pixel\asteroid_p.glsl" />
     <None Include="res\shaders\pixel\basic_p.glsl" />
+    <None Include="res\shaders\pixel\bloom_brightness_p.glsl" />
+    <None Include="res\shaders\pixel\blur_p.glsl" />
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
     <None Include="res\shaders\pixel\planet_p.glsl" />
@@ -208,6 +210,8 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\pixel\transparent_p.glsl" />
     <None Include="res\shaders\vertex\asteroid_v.glsl" />
     <None Include="res\shaders\vertex\basic_v.glsl" />
+    <None Include="res\shaders\vertex\bloom_brightness_v.glsl" />
+    <None Include="res\shaders\vertex\blur_v.glsl" />
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
     <None Include="res\shaders\vertex\planet_v.glsl" />

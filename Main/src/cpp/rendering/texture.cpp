@@ -79,6 +79,12 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 		this->filter_mag = GL_NEAREST;
 		this->filter_min = GL_NEAREST;
 	}
+	else if(type == texture_type::color)
+	{
+		this->wrap_mode = GL_CLAMP_TO_EDGE;
+		this->filter_mag = GL_LINEAR;
+		this->filter_min = GL_LINEAR;
+	}
 	else
 	{
 		this->wrap_mode = GL_REPEAT;
