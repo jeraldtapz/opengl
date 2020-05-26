@@ -165,6 +165,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClCompile Include="src\cpp\data\kernel3.cpp" />
     <ClCompile Include="src\cpp\data\mesh.cpp" />
     <ClCompile Include="src\cpp\data\model.cpp" />
+    <ClCompile Include="src\cpp\data\primitive.cpp" />
     <ClCompile Include="src\cpp\data\transform.cpp" />
     <ClCompile Include="src\cpp\data\vertex.cpp" />
     <ClCompile Include="src\cpp\engine\camera.cpp" />
@@ -243,6 +244,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClInclude Include="src\headers\data\mesh.h" />
     <ClInclude Include="src\headers\data\model.h" />
     <ClInclude Include="src\headers\data\mvp.h" />
+    <ClInclude Include="src\headers\data\primitive.h" />
     <ClInclude Include="src\headers\data\tiling_and_offset.h" />
     <ClInclude Include="src\headers\data\transform.h" />
     <ClInclude Include="src\headers\engine\camera.h" />

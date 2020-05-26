@@ -43,3 +43,9 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i, std::vector<t
 	cull_face = GL_BACK;
 	should_cull_face = true;
 }
+
+void mesh::replace_textures(const std::vector<texture>& textures)
+{
+	this->textures.clear();
+	this->textures.insert(this->textures.begin(), textures.begin(), textures.end());
+}

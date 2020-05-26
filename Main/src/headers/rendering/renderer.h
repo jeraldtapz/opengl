@@ -27,5 +27,5 @@ public:
 	void draw_cube_map(const shader_program& program) const;
 	void deallocate() const;
 	virtual ~renderer();
-	
+	std::shared_ptr<mesh> get_mesh_ptr() const;
 };

@@ -293,6 +293,12 @@ void renderer::setup()
 	glBindVertexArray(0);
 }
 
+std::shared_ptr<mesh> renderer::get_mesh_ptr() const
+{
+	return mesh_ptr;
+}
+
+
 renderer::~renderer() = default;
 
 void renderer::deallocate() const

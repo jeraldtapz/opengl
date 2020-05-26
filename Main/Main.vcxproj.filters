@@ -114,6 +114,9 @@
     <ClCompile Include="src\cpp\shadow\shadow_renderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\cpp\data\primitive.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\pixel\basic_p.glsl" />
@@ -272,6 +275,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\headers\data\tiling_and_offset.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\headers\data\primitive.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

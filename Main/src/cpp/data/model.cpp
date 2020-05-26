@@ -234,3 +234,8 @@ void model::deallocate()
 		for(auto &rend: renderers)
 			rend.deallocate();
 }
+
+std::vector<mesh> model::get_meshes() const
+{
+	return meshes;
+}
