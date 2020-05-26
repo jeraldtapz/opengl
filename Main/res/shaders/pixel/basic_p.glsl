@@ -88,7 +88,6 @@ uniform Material mat;
 uniform vec3 ambientColor;
 uniform float time;
 uniform float isFlashlightOn;
-uniform float shouldReceiveShadow;
 uniform vec2 tiling;
 uniform vec2 offset;
 uniform samplerCube pointShadowMap;

@@ -363,5 +363,3 @@ void texture::set_filter_min(const GLint filter_min)
 	else
 	glTexParameteri(is_multi_sampled ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_min);
 }
-
-

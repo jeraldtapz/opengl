@@ -26,6 +26,7 @@ public:
 	void draw_shadow(const shader_program& program);
 	void load(const std::string &path);
 	void deallocate();
+	std::vector<mesh> get_meshes() const;
 
 private:
 	std::vector<mesh> meshes;
