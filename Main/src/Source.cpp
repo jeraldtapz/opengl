@@ -1,4 +1,7 @@
+// ReSharper disable CppClangTidyCppcoreguidelinesNarrowingConversions
+// ReSharper disable CppClangTidyBugproneNarrowingConversions
 #define FB frame_buffer  // NOLINT(cppcoreguidelines-macro-usage)
+#define TEX_T texture_type // NOLINT(cppcoreguidelines-macro-usage)
 
 #pragma region includes
 
@@ -33,7 +36,6 @@
 #include "rendering/render_buffer.h"
 #include "rendering/transparent_renderer.h"
 #include "rendering/uniform_buffer_object.h"
-#include "shadow/shadow_renderer.h"
 #include "utils/config.h"
 
 #pragma endregion
@@ -47,7 +49,6 @@ void render_model(model& m, const shader_program& program);
 void render_model(model& m, const tiling_and_offset &tiling_and_offset, const shader_program& program);
 void render_asteroids(model& m, const shader_program& program);
 void render_model_outline(model& m, const shader_program& program);
-void render_floor(const renderer& rend, const shader_program& program);
 void render_transparent_quads(const std::vector<game_object> &quads, const renderer& rend, const shader_program& program);
 void render_skybox(const renderer& rend, const shader_program& program);
 void render_pp_quad(const renderer& rend, const shader_program& program);
@@ -80,6 +81,8 @@ void render_debug_windows();
 
 const unsigned int ASTEROID_COUNT = 1000;
 const unsigned int SHADOW_RESOLUTION = 2048;
+const unsigned int WIDTH = 1280;
+const unsigned int HEIGHT = 720;
 const unsigned int SAMPLES = 8;
 
 #pragma endregion
@@ -89,8 +92,8 @@ const unsigned int SAMPLES = 8;
 camera cam = camera(45.0f, 0.1f, 200.0f);
 float last_frame = 0.0f;
 float delta_time = 0.0f;
-double last_x = config::WIDTH * 0.5;
-double last_y = config::HEIGHT * 0.5;
+double last_x = WIDTH * 0.5;
+double last_y = HEIGHT * 0.5;
 float key_press_cooldown = 0.25f;
 float last_cursor_swap = 0.0f;
 float last_flash_light_swap = 0.0f;
@@ -115,7 +118,7 @@ bool use_bloom = true;
 color ambient_color;
 std::map<float, transform> sorted;
 mvp mvp_matrix;
-mvp mvp_loaded_model;
+mvp dir_shadow_map_mvp_matrix;
 glm::mat4* asteroid_model_matrices = new glm::mat4[ASTEROID_COUNT];
 
 //glfw
@@ -125,18 +128,12 @@ GLFWwindow* window;
 point_light point_lights[4];
 directional_light dir_light;
 spot_light spotlight;
+material cube_mat;
 
 std::vector<light*> lights;
 std::vector<game_object*> game_objects;
-
-material cube_mat;
-
-
-
-
-
-//models
 std::vector<model> game_models;
+
 
 FB shadow_fb = FB();
 FB point_shadow_fb = FB();
@@ -146,17 +143,17 @@ FB hdr_fb = FB();
 FB destination_fb = FB();
 FB debug_fb = FB();
 FB pingpong_fb[] = { FB(), FB() };
+FB geometry_fb = FB();
+FB ds_light_fb = FB();
 
 uniform_buffer_object vp_ubo;
 
 float values[9] = { 1.0f,1.0f,1.0f,1.0f, -9.0f, 1.0f, 1.0f, 1.0f, 1.0f };
 kernel3 kernel = kernel3(values, 0.0033f);
 
-
-
 #pragma endregion 
 
-int main()
+int main()  // NOLINT(bugprone-exception-escape)
 {
 	
 	#pragma region Init GLFW
@@ -171,7 +168,7 @@ int main()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	window = glfwCreateWindow(config::WIDTH, config::HEIGHT, "Main", nullptr, nullptr);
+	window = glfwCreateWindow(WIDTH, HEIGHT, "Main", nullptr, nullptr);
 
 	if(!window)
 	{
@@ -197,7 +194,7 @@ int main()
 
 	#pragma region Viewport and Callbacks
 	
-	glViewport(0, 0, config::WIDTH, config::HEIGHT);
+	glViewport(0, 0, WIDTH, HEIGHT);
 	glfwSetFramebufferSizeCallback(window, frame_buffer_resize_callback);
 
 	glfwSwapInterval(0);
@@ -266,6 +263,12 @@ int main()
 	shader blur_shader_vertex = shader("blur_v", GL_VERTEX_SHADER);
 	shader blur_shader_pixel = shader("blur_p", GL_FRAGMENT_SHADER);
 
+	shader ds_geometry_vertex = shader("ds_geometry_v", GL_VERTEX_SHADER);
+	shader ds_geometry_pixel = shader("ds_geometry_p", GL_FRAGMENT_SHADER);
+
+	shader ds_dir_light_vertex = shader("ds_dir_light_v", GL_VERTEX_SHADER);
+	shader ds_dir_light_pixel = shader("ds_dir_light_p", GL_FRAGMENT_SHADER);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -281,6 +284,10 @@ int main()
 	shader_program point_shadow_shader_program = shader_program(&point_shadow_shader_vertex, &point_shadow_shader_pixel, &point_shadow_shader_geometry);
 	shader_program bloom_brightness_shader_program = shader_program(&bloom_brightness_shader_vertex, &bloom_brightness_shader_pixel);
 	shader_program blur_shader_program = shader_program(&blur_shader_vertex, &blur_shader_pixel);
+
+	
+	shader_program ds_geometry_shader_program = shader_program(&ds_geometry_vertex, &ds_geometry_pixel);
+	shader_program ds_dir_light_shader_program = shader_program(&ds_dir_light_vertex, &ds_dir_light_pixel);
 	
 	#pragma endregion
 
@@ -291,19 +298,16 @@ int main()
 
 	#pragma region Loaded Textures
 	
-	const texture container_diff_tex = texture(get_tex("container2_diffuse.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture wall_tex = texture(get_tex("liza.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture container_spec_tex = texture(get_tex("container2_specular.png"), texture_type::specular, GL_UNSIGNED_BYTE, true);
+	const texture container_diff_tex = texture(get_tex("rocks0/rocks0_color.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
+	const texture container_spec_tex = texture(get_tex("rocks0/rocks0_specular.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
+	const texture container_norm_tex = texture(get_tex("rocks0/rocks0_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
 
-	const texture matrix_tex = texture(get_tex("matrix.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture grass_tex = texture(get_tex("grass.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
+	const texture window_tex = texture(get_tex("window.png"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
 
-	const texture window_tex = texture(get_tex("window.png"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-
-	const texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), texture_type::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), texture_type::normal, GL_UNSIGNED_BYTE, true);
-	const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), texture_type::height, GL_UNSIGNED_BYTE, true);
-	const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), texture_type::specular, GL_UNSIGNED_BYTE, true);
+	const texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
+	const texture floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
+	const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), TEX_T::height, GL_UNSIGNED_BYTE, true);
+	const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
 
 
 	std::string skybox_texture_paths[] = {
@@ -314,40 +318,51 @@ int main()
 		"res/textures/skybox_5/pz.png",
 		"res/textures/skybox_5/nz.png"
 	};
-	const texture skybox_tex = texture(skybox_texture_paths, texture_type::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
+	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
 
 	#pragma endregion
 
 	#pragma region Texture Buffers
 	
 	//basically unnecessary
-	texture bloom_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	texture bloom_fb_brightness_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	texture bloom_fb_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	texture bloom_fb_brightness_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
 
 	texture pingpong_color_tex[2];
 	for (auto& i : pingpong_color_tex)
-		i = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, true);
+		i = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, true);
 
-	texture debug_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	texture debug_fb_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
+	texture debug_fb_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	texture debug_fb_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
 
-	texture ms_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false, SAMPLES);
-	texture ms_depth_tex = texture(texture_type::depth, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
+	texture ms_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false, SAMPLES);
+	texture ms_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
 
-	texture hdr_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	texture hdr_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
 
-	texture shadow_depth_tex = texture(texture_type::depth, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+	texture shadow_depth_tex = texture(TEX_T::depth, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 
-	texture point_shadow_depth_tex = texture(texture_type::cube, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+	texture point_shadow_depth_tex = texture(TEX_T::cube, SHADOW_RESOLUTION, SHADOW_RESOLUTION, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 	
-	texture destination_fb_color_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	texture destination_fb_depth_tex = texture(texture_type::color, config::WIDTH, config::HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+	texture destination_fb_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	texture destination_fb_depth_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, false);
 
+
+
+	//deferred
+	texture geometry_pos_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB16F, GL_FLOAT, true);
+	texture geometry_norm_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB16F, GL_FLOAT, true);
+	texture geometry_diff_spec_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	texture geometry_depth_stencil_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, false);
+	
+	texture ds_light_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	render_buffer ds_light_rb = render_buffer(GL_DEPTH24_STENCIL8, WIDTH, HEIGHT);
+	
 	#pragma endregion
 	
 	#pragma region Meshes
 	
-	std::vector<texture> cube_textures = { container_diff_tex, container_spec_tex };
+	std::vector<texture> cube_textures = { container_diff_tex, container_spec_tex , container_norm_tex };
 	mesh cube_mesh = primitive::get_cube();
 	cube_mesh.replace_textures(cube_textures);
 	cube_mesh.is_indexed = false;
@@ -374,15 +389,22 @@ int main()
 	floor_mesh.is_indexed = false;
 	floor_mesh.should_cull_face = false;
 
-	std::vector<texture> screen_space_quad_textures = { destination_fb_color_tex };
-	mesh ss_quad_mesh = primitive::get_quad();
-	ss_quad_mesh.replace_textures(screen_space_quad_textures);
-	ss_quad_mesh.is_indexed = false;
-	ss_quad_mesh.should_cull_face = false;
+	std::vector<texture> destination_quad_textures = { destination_fb_color_tex };
+	mesh destination_quad_mesh = primitive::get_quad();
+	destination_quad_mesh.replace_textures(destination_quad_textures);
+	destination_quad_mesh.is_indexed = false;
+	destination_quad_mesh.should_cull_face = false;
 
-	mesh ss_raw_quad_mesh = primitive::get_quad();
-	ss_quad_mesh.is_indexed = false;
-	ss_quad_mesh.should_cull_face = true;
+	mesh bloom_quad_mesh = primitive::get_quad();
+	bloom_quad_mesh.is_indexed = false;
+	bloom_quad_mesh.should_cull_face = true;
+
+	mesh ds_dir_light_quad_mesh = primitive::get_quad();
+	ds_dir_light_quad_mesh.is_indexed = false;
+	ds_dir_light_quad_mesh.should_cull_face = true;
+
+	mesh ds_point_light_sphere_mesh = primitive::get_sphere();
+	ds_point_light_sphere_mesh.is_indexed = true;
 	
 	#pragma endregion
 	
@@ -393,12 +415,17 @@ int main()
 	renderer cube_renderer = renderer(std::make_shared<mesh>(cube_mesh));
 	renderer skybox_renderer = renderer(std::make_shared<mesh>(skybox_cube_mesh));
 	transparent_renderer quad_renderer = transparent_renderer(std::make_shared<mesh>(transparent_quad_mesh));
-	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(ss_quad_mesh));
-	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(ss_raw_quad_mesh));
+	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(destination_quad_mesh));
+	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
 	renderer floor_renderer = renderer(std::make_shared<mesh>(floor_mesh)); //Renderers
 
 	model barrel_model = model("res/models/barrel/scene.gltf", true);
-	model sphere_model = model({ primitive::get_sphere() });
+	barrel_model.set_name("Barrel");
+
+	model pistol_model = model("res/models/pistol/scene.gltf", true);
+	pistol_model.set_name("Pistol");
+	
+	model light_rep_model = model({ primitive::get_sphere() });
 	model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
 	model planet = model("res/models/planet/planet.obj", false);
 
@@ -410,15 +437,15 @@ int main()
 	{
 		glm::mat4 m = glm::mat4(1.0f);
 		float angle = static_cast<float>(i) / static_cast<float>(ASTEROID_COUNT) * 360.0f;
-		float displacement = (rand() % static_cast<int>(2 * offset * 100)) / 100.0f - offset;
+		float displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
 		float x = sin(angle) * radius + displacement;
-		displacement = (rand() % static_cast<int>(2 * offset * 100)) / 100.0f - offset;
+		displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
 		float y = displacement * 0.4f; // keep height of field smaller compared to width of x and z
-		displacement = (rand() % static_cast<int>(2 * offset * 100)) / 100.0f - offset;
+		displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
 		float z = cos(angle) * radius + displacement;
 		m = glm::translate(m, glm::vec3(x, y, z));
 
-		float scale = rand() % 20 / 100.0f + 0.05f;
+		float scale = static_cast<float>(rand() % 20 / 100.0f + 0.05f);
 		m = glm::scale(m, glm::vec3(scale));
 
 		// 3. rotation: add random rotation around a (semi)randomly picked rotation axis vector
@@ -430,17 +457,41 @@ int main()
 	
 	std::vector<mesh> cube_meshes = { cube_mesh };
 	model cube_model = model(cube_meshes);
+	cube_model.set_name("Cube");
 
 	std::vector<mesh> floor_meshes = { floor_mesh };
 	model floor_model = model(floor_meshes); //generated models
 
+	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
+
 	game_models.push_back(barrel_model);
-	game_models.push_back(cube_model);
-	
+	game_models.push_back(pistol_model);
+	game_models.push_back(floor_model);
+
 	#pragma endregion
 
 	#pragma region FrameBuffers and RenderBuffers and Uniform Buffer Objects
 
+	geometry_fb.generate();
+	geometry_fb.bind();
+	geometry_fb.attach_texture_2d_color(geometry_pos_tex, GL_COLOR_ATTACHMENT0);
+	geometry_fb.attach_texture_2d_color(geometry_norm_tex, GL_COLOR_ATTACHMENT1);
+	geometry_fb.attach_texture_2d_color(geometry_diff_spec_tex, GL_COLOR_ATTACHMENT2);
+	geometry_fb.attach_texture_2d_depth_stencil(geometry_depth_stencil_tex, GL_DEPTH_STENCIL_ATTACHMENT);
+	geometry_fb.set_draw_buffers(3, nullptr);
+
+	std::cout << "Geometry Frame buffer " << FB::validate() << std::endl;
+
+	FB::unbind(); // geometry fb
+	
+	ds_light_fb.generate();
+	ds_light_fb.bind();
+	ds_light_fb.attach_texture_2d_color(ds_light_color_tex, GL_COLOR_ATTACHMENT0);
+	ds_light_fb.attach_render_buffer(ds_light_rb, GL_DEPTH_STENCIL_ATTACHMENT);
+
+	std::cout << "Deferred Shading Frame Buffer " << FB::validate() << std::endl;
+	FB::unbind(); // DS Light pass fb
+	
 	ms_fb.generate();
 	ms_fb.bind();
 	ms_fb.attach_texture_2d_color(ms_color_tex, GL_COLOR_ATTACHMENT0);
@@ -491,7 +542,7 @@ int main()
 	hdr_fb.bind();
 	hdr_fb.attach_texture_2d_color(hdr_color_tex, GL_COLOR_ATTACHMENT0);
 	
-	render_buffer hdr_rb = render_buffer(GL_DEPTH24_STENCIL8, config::WIDTH, config::HEIGHT);
+	render_buffer hdr_rb = render_buffer(GL_DEPTH24_STENCIL8, WIDTH, HEIGHT);
 	hdr_fb.attach_render_buffer(hdr_rb, GL_DEPTH_STENCIL_ATTACHMENT);
 
 	std::cout << "HDR frame buffer " << FB::validate() << std::endl;
@@ -544,6 +595,7 @@ int main()
 	dir_light.diff_intensity = 0.5f;
 	game_objects.push_back(&dir_light);
 	lights.push_back(&dir_light);
+	dir_shadow_map_mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
 	
 	for (size_t i = 0; i < 4 ; i++)
 	{
@@ -566,25 +618,21 @@ int main()
 	spotlight.set_name("spot_light");
 	lights.push_back(&spotlight);
 	game_objects.push_back(&spotlight);
-
-
-	mvp_loaded_model.model_matrix = glm::mat4(1);
-	mvp_loaded_model.model_matrix = glm::scale(mvp_loaded_model.model_matrix, glm::vec3(0.025f));
-	mvp_loaded_model.model_matrix = glm::rotate(mvp_loaded_model.model_matrix, glm::radians(-90.0f), glm::vec3(1, 0, 0));
-	mvp_loaded_model.model_matrix = glm::translate(mvp_loaded_model.model_matrix, glm::vec3(0, 1, 1));
+	
 
 	barrel_model.get_transform()->set_position(glm::vec3(0, 0, 1));
 	barrel_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 	barrel_model.get_transform()->set_scale(glm::vec3(0.025f));
 
-	cube_model.get_transform()->set_position(glm::vec3(2, 0.5f, 0));
+	pistol_model.get_transform()->set_position(glm::vec3(2, 1.0f, 0));
+	pistol_model.get_transform()->set_scale(glm::vec3(0.025f));
 
 	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 	floor_model.get_transform()->set_scale(glm::vec3(5, 5, 1));
 	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(5,5), glm::vec2(0,0) };
 
-	sphere_model.get_transform()->set_position(glm::vec3(1, 5, 0));
-	sphere_model.get_transform()->set_scale(glm::vec3(0.1f));
+	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
+	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
 	
 	#pragma endregion
 
@@ -594,13 +642,70 @@ int main()
 	{
 		process_input(window);
 
+		mvp_matrix.view = cam.get_view_matrix();
+		mvp_matrix.projection = cam.get_proj_matrix();
+		vp_ubo.buffer_data_range(0, sizeof(glm::mat4), glm::value_ptr(mvp_matrix.view));
+		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection)); // view projection 
+
+		geometry_fb.bind();
+		FB::clear_frame();
+		
+		ds_geometry_shader_program.use();
+		ds_geometry_shader_program.set_model(barrel_model.get_transform()->get_model_matrix());
+		ds_geometry_shader_program.set_tiling_and_offset(tiling_and_offset());
+		ds_geometry_shader_program.set_vec3("viewPos", cam.get_transform()->position());
+		ds_geometry_shader_program.set_float("useNormalMaps", use_normal_maps);
+		ds_geometry_shader_program.set_float("useParallax", use_parallax);
+		barrel_model.draw(ds_geometry_shader_program);
+
+		ds_geometry_shader_program.set_model(pistol_model.get_transform()->get_model_matrix());
+		pistol_model.draw(ds_geometry_shader_program);
+
+		ds_geometry_shader_program.set_model(floor_model.get_transform()->get_model_matrix());
+		ds_geometry_shader_program.set_tiling_and_offset(floor_tiling_and_offset);
+		floor_model.draw(ds_geometry_shader_program);
+
+		FB::unbind(); //geometry pass for deferred
+
 		if(use_shadow)
 		{
 			render_omnidirectional_shadow_map(game_models, point_shadow_shader_program);
-			render_directional_shadow_map(game_models, shadow_shader_program); // shadow passes
-		}
+			render_directional_shadow_map(game_models, shadow_shader_program);
+		} // shadow passes for each shadow casting light
 
-		glViewport(0, 0, config::WIDTH, config::HEIGHT);
+		glViewport(0, 0, WIDTH, HEIGHT);
+
+		ds_light_fb.bind();
+		FB::clear_frame();
+
+		ds_dir_light_shader_program.use();
+		send_dir_light_to_shader(ds_dir_light_shader_program);
+		ds_dir_light_shader_program.set_vec3("viewPos", cam.get_transform()->position());
+		ds_dir_light_shader_program.set_matrix("lightView", dir_shadow_map_mvp_matrix.view);
+		ds_dir_light_shader_program.set_matrix("lightProjection", dir_shadow_map_mvp_matrix.projection);
+		ds_dir_light_shader_program.set_int("gPos", 0);
+		ds_dir_light_shader_program.set_int("gNormal", 1);
+		ds_dir_light_shader_program.set_int("gDiffSpec", 2);
+		ds_dir_light_shader_program.set_int("shadowMap", 3);
+		ds_dir_light_shader_program.set_float("useShadow", use_shadow);
+
+		texture::activate(GL_TEXTURE0);
+		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0)->bind();
+
+		texture::activate(GL_TEXTURE1);
+		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT1)->bind();
+
+		texture::activate(GL_TEXTURE2);
+		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT2)->bind();
+
+		texture::activate(GL_TEXTURE3);
+		shadow_fb.get_depth_attachment_tex()->bind();
+
+		ds_dir_light_quad_model.draw(ds_dir_light_shader_program);
+
+		FB::unbind();
+
+		glViewport(0, 0, WIDTH, HEIGHT);
 
 		if (use_hdr)
 			hdr_fb.bind();
@@ -609,16 +714,10 @@ int main()
 
 		FB::clear_frame();
 
-		mvp_matrix.view = cam.get_view_matrix();
-		mvp_matrix.projection = cam.get_proj_matrix();
-
-		vp_ubo.buffer_data_range(0, sizeof(glm::mat4), glm::value_ptr(mvp_matrix.view));
-		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection));
-
-		render_model(cube_model, tiling_and_offset(), planet_shader_program);
-		render_light_sources(sphere_model, light_shader_program);
 		render_model(barrel_model, tiling_and_offset(), basic_shader_program);
 		render_model(floor_model, floor_tiling_and_offset, basic_shader_program_2);
+		render_model(pistol_model, tiling_and_offset(), basic_shader_program_3);
+		render_light_sources(light_rep_model, light_shader_program);
 		render_skybox(skybox_renderer, skybox_shader_program);
 		
 		FB::unbind(); // render normally, with HDR or Multisampling
@@ -630,17 +729,17 @@ int main()
 
 		//blit to bloom buffer
 		bloom_fb.bind_draw();
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
 		destination_fb.bind_draw();
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 
 		debug_fb.bind_draw();
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 		
 		FB::unbind(); // blit
 
@@ -707,8 +806,8 @@ void render_model(model &m, const shader_program &program)
 
 	program.set_model(m.get_transform()->get_model_matrix());
 
-	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
-	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
+	program.set_matrix("lightView", dir_shadow_map_mvp_matrix.view);
+	program.set_matrix("lightProjection", dir_shadow_map_mvp_matrix.projection);
 
 	/*glActiveTexture(GL_TEXTURE8);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_tex.get_id());
@@ -793,47 +892,6 @@ void render_model_outline(model &m, const shader_program &program)
 	glEnable(GL_DEPTH_TEST);
 }
 
-void render_floor(const renderer& rend, const shader_program& program)
-{
-	FB::set_depth_writing(true);
-	FB::set_depth_testing(true);
-	FB::set_stencil_writing(true);
-
-	program.use();
-	program.set_float("useShadow", use_shadow ? 1 : 0);
-	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
-	program.set_float("useParallax", use_parallax ? 1 : 0);
-	program.set_vec3("viewPos", cam.get_transform()->position());
-	send_point_lights_to_shader(program);
-	send_dir_light_to_shader(program);
-	send_spot_light_to_shader(program);
-	send_material_data_to_shader(program);
-
-	mvp_matrix.model_matrix = glm::mat4(1);
-	mvp_matrix.model_matrix = glm::translate(mvp_matrix.model_matrix, glm::vec3(0, 0, 0));
-	mvp_matrix.model_matrix = glm::rotate(mvp_matrix.model_matrix, glm::radians( -90.0f), glm::vec3(1, 0, 0));
-	mvp_matrix.model_matrix = glm::scale(mvp_matrix.model_matrix, glm::vec3(5, 5, 1));
-	program.set_mvp(mvp_matrix);
-	program.set_vec3("tiling", glm::vec3(5));
-	program.set_vec3("offset", glm::vec3(0));
-
-	texture::activate(GL_TEXTURE7);
-	shadow_fb.get_depth_attachment_tex()->bind();
-	program.set_int("mat.shadowMap0", 7);
-
-	program.set_matrix("lightView", glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0)));
-	program.set_matrix("lightProjection", glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f));
-
-	program.set_float("shouldReceiveShadow", 1.0f);
-
-	texture::activate(GL_TEXTURE8);
-	point_shadow_fb.get_depth_attachment_tex()->bind();
-	program.set_int("pointShadowMap", 8);
-	program.set_float("farPlane", 25.0f);
-	program.set_vec3("pointLights[0].lightPos", point_lights[0].get_transform()->position());
-	rend.draw(program);
-}
-
 void render_transparent_quads(const std::vector<game_object> &quads, const renderer& rend, const shader_program& program)
 {
 	FB::set_stencil_testing(false);
@@ -910,12 +968,12 @@ void render_directional_shadow_map(std::vector<model>& models, const shader_prog
 
 	FB::clear_depth_buffer();
 
-	mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
-	mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
+	dir_shadow_map_mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
+	dir_shadow_map_mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
 
 	program.use();
-	program.set_view(mvp_matrix.view);
-	program.set_proj(mvp_matrix.projection);
+	program.set_view(dir_shadow_map_mvp_matrix.view);
+	program.set_proj(dir_shadow_map_mvp_matrix.projection);
 
 	glCullFace(GL_FRONT);
 
@@ -1016,7 +1074,7 @@ void bloom_postprocess(const renderer& rend, const shader_program &bloom_brightn
 	//copy extracted bright pixels to first pingpong fbo
 	bloom_fb.bind_read();
 	pingpong_fb[0].bind_draw();
-	glBlitFramebuffer(0, 0, config::WIDTH, config::HEIGHT, 0, 0, config::WIDTH, config::HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
 	FB::unbind();
 
@@ -1064,9 +1122,12 @@ void render_debug_windows()
 	const ImTextureID depth_tex_id = reinterpret_cast<void*>(debug_fb.get_depth_attachment()); // NOLINT(misc-misplaced-const)
 	const ImTextureID shadow_tex_id = reinterpret_cast<void*>(shadow_fb.get_depth_attachment()); // NOLINT(misc-misplaced-const)
 	const ImTextureID bloom_color_tex_id = reinterpret_cast<void*>(bloom_fb.get_color_attachment(GL_COLOR_ATTACHMENT0)); // NOLINT(misc-misplaced-const)
-	const ImTextureID bloom_brightness_tex_id = reinterpret_cast<void*>(bloom_fb.get_color_attachment(GL_COLOR_ATTACHMENT1)); // NOLINT(misc-misplaced-const)
-	const ImTextureID blur_brightness_tex_id_0 = reinterpret_cast<void*>(pingpong_fb[0].get_color_attachment(GL_COLOR_ATTACHMENT0));  // NOLINT(misc-misplaced-const)
-	const ImTextureID blur_brightness_tex_id_1 = reinterpret_cast<void*>(pingpong_fb[1].get_color_attachment(GL_COLOR_ATTACHMENT0));  // NOLINT(misc-misplaced-const)
+
+	const ImTextureID g_pos = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
+	const ImTextureID g_normal = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT1));// NOLINT(misc-misplaced-const)
+	const ImTextureID g_diff_spec = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT2));// NOLINT(misc-misplaced-const)
+
+	const ImTextureID ds_dir_light = reinterpret_cast<void*>(ds_light_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
@@ -1095,21 +1156,27 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
-	if (ImGui::TreeNode("Bloom FB Brightness"))
+	if (ImGui::TreeNode("Deferred Dir Shadow"))
 	{
-		ImGui::Image(bloom_brightness_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::Image(ds_dir_light, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
-	if (ImGui::TreeNode("Blur Brightness 0"))
+	if(ImGui::TreeNode("G Position"))
 	{
-		ImGui::Image(blur_brightness_tex_id_0, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::Image(g_pos, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
-	if (ImGui::TreeNode("Blur Brightness 1"))
+	if (ImGui::TreeNode("G Normal"))
 	{
-		ImGui::Image(blur_brightness_tex_id_1, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::Image(g_normal, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("G DiffSpec"))
+	{
+		ImGui::Image(g_diff_spec, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 	
@@ -1160,6 +1227,27 @@ void render_debug_windows()
 		}
 		ImGui::TreePop();
 	}
+	ImGui::End();
+
+	ImGui::Begin("Game Objects");
+
+	for (auto &game_model : game_models)
+	{
+		if (ImGui::TreeNode(game_model.get_name().c_str()))
+		{
+			ImGui::Checkbox("Enabled", &(game_model.is_active));
+			ImGui::DragFloat3("position", &(game_model.get_transform()->position_ptr()->x), 0.1f);
+			ImGui::DragFloat3("rotation", &(game_model.get_transform()->rotation_ptr()->x), 0.1f);
+			ImGui::DragFloat3("scale", &(game_model.get_transform()->scale_ptr()->x), 0.1f);
+
+			ImGui::Spacing();
+
+			ImGui::TreePop();
+		}
+	}
+	
+	
+
 	ImGui::End();
 
 

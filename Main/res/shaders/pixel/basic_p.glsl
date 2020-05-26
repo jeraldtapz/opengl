@@ -224,7 +224,7 @@ float CalculateDirectionalShadow()
 	float closestDepth = texture(mat.shadowMap0, lightSpacePosProj.xy).r;
 	float currentDepth = lightSpacePosProj.z;
 
-	vec3 normal = texture(mat.normalTexture0, GetTexCoords(0.0)).rgb;
+	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
 
 	normal = normalize(NormalTangent);
