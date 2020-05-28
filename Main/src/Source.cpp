@@ -54,12 +54,16 @@ void render_skybox(const renderer& rend, const shader_program& program);
 void render_pp_quad(const renderer& rend, const shader_program& program);
 void render_directional_shadow_map(std::vector<model> &models, const shader_program& program);
 void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program& program);
-void bloom_postprocess(const renderer& rend, const shader_program& bloom_brightness, const shader_program& blur);
+void bloom_postprocess(const frame_buffer& fb, const renderer& rend, const shader_program& bloom_brightness, const shader_program& blur);
+
+void render_ds_geometry(const shader_program& program);
 
 void send_dir_light_to_shader(const shader_program& program);
 void send_point_lights_to_shader(const shader_program& program);
+void send_point_light_to_shader(const shader_program& program, const point_light& light);
 void send_spot_light_to_shader(const shader_program& program);
 void send_material_data_to_shader(const shader_program& program);
+float calculate_point_light_radius(point_light& light);
 
 void deallocate();
 void init_imgui();
@@ -84,6 +88,7 @@ const unsigned int SHADOW_RESOLUTION = 2048;
 const unsigned int WIDTH = 1280;
 const unsigned int HEIGHT = 720;
 const unsigned int SAMPLES = 8;
+const float RADIUS = 25.0f;
 
 #pragma endregion
 
@@ -114,6 +119,7 @@ bool use_parallax = true;
 bool use_gamma_correction = true;
 bool use_hdr = true;
 bool use_bloom = true;
+bool use_deferred = false;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -215,10 +221,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 	#pragma region Data
 
 	glm::vec3 point_light_positions[] = {
-		glm::vec3(0.0f,  4.5f,  1.0f),
-		glm::vec3(2.3f, -3.3f, -4.0f),
-		glm::vec3(-4.0f,  2.0f, -12.0f),
-		glm::vec3(0.0f,  0.0f, -3.0f)
+		glm::vec3(9.0f,  4.5f,  -8.0f),
+		glm::vec3(9.3f,  3.3f,  4.0f),
+		glm::vec3(-4.0f,  2.0f, 4.8f),
+		glm::vec3(-12.0f,  1.0f, -11.2f)
 	};
 
 #pragma endregion
@@ -269,6 +275,12 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader ds_dir_light_vertex = shader("ds_dir_light_v", GL_VERTEX_SHADER);
 	shader ds_dir_light_pixel = shader("ds_dir_light_p", GL_FRAGMENT_SHADER);
 
+	shader ds_point_light_vertex = shader("ds_point_light_v", GL_VERTEX_SHADER);
+	shader ds_point_light_pixel = shader("ds_point_light_p", GL_FRAGMENT_SHADER);
+	
+	shader ds_point_light_stcl_vertex = shader("ds_point_light_stcl_v", GL_VERTEX_SHADER);
+	shader ds_point_light_stcl_pixel = shader("ds_point_light_stcl_p", GL_FRAGMENT_SHADER);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -288,12 +300,14 @@ int main()  // NOLINT(bugprone-exception-escape)
 	
 	shader_program ds_geometry_shader_program = shader_program(&ds_geometry_vertex, &ds_geometry_pixel);
 	shader_program ds_dir_light_shader_program = shader_program(&ds_dir_light_vertex, &ds_dir_light_pixel);
+	shader_program ds_point_light_shader_program = shader_program(&ds_point_light_vertex, &ds_point_light_pixel);
+	shader_program ds_point_light_stcl_shader_program = shader_program(&ds_point_light_stcl_vertex, &ds_point_light_stcl_pixel);
 	
 	#pragma endregion
 
 	#pragma region Colors, Textures, Materials & Meshes
 
-	ambient_color = color(0.1f, 0.1f, 0.1f, 1.0f);
+	ambient_color = color(0.0f, 0.0f, 0.0f, 1.0f);
 	cube_mat = material(color::WHITE, color::WHITE);
 
 	#pragma region Loaded Textures
@@ -333,7 +347,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 		i = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, true);
 
 	texture debug_fb_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	texture debug_fb_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false);
+	texture debug_fb_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT32F, GL_FLOAT, false);
+	texture debug_fb_stencil_tex = texture(TEX_T::stencil, WIDTH, HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, false);
 
 	texture ms_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false, SAMPLES);
 	texture ms_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
@@ -355,8 +370,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 	texture geometry_diff_spec_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, true);
 	texture geometry_depth_stencil_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, false);
 	
-	texture ds_light_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB16F, GL_FLOAT, false);
-	render_buffer ds_light_rb = render_buffer(GL_DEPTH24_STENCIL8, WIDTH, HEIGHT);
+	texture ds_light_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
+	render_buffer ds_light_rb = render_buffer(GL_DEPTH32F_STENCIL8, WIDTH, HEIGHT);
+	texture ds_light_depth_stencil_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, false);
 	
 	#pragma endregion
 	
@@ -402,9 +418,13 @@ int main()  // NOLINT(bugprone-exception-escape)
 	mesh ds_dir_light_quad_mesh = primitive::get_quad();
 	ds_dir_light_quad_mesh.is_indexed = false;
 	ds_dir_light_quad_mesh.should_cull_face = true;
+	ds_dir_light_quad_mesh.is_transparent = true;
 
 	mesh ds_point_light_sphere_mesh = primitive::get_sphere();
 	ds_point_light_sphere_mesh.is_indexed = true;
+	ds_point_light_sphere_mesh.is_transparent = true;
+	ds_point_light_sphere_mesh.should_cull_face = true;
+	ds_point_light_sphere_mesh.cull_face = GL_FRONT;
 	
 	#pragma endregion
 	
@@ -461,8 +481,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	std::vector<mesh> floor_meshes = { floor_mesh };
 	model floor_model = model(floor_meshes); //generated models
-
+	floor_model.set_name("Floor");
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
+	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
 	game_models.push_back(barrel_model);
 	game_models.push_back(pistol_model);
@@ -487,7 +508,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 	ds_light_fb.generate();
 	ds_light_fb.bind();
 	ds_light_fb.attach_texture_2d_color(ds_light_color_tex, GL_COLOR_ATTACHMENT0);
-	ds_light_fb.attach_render_buffer(ds_light_rb, GL_DEPTH_STENCIL_ATTACHMENT);
+	ds_light_fb.attach_texture_2d_depth_stencil(ds_light_depth_stencil_tex, GL_DEPTH_STENCIL_ATTACHMENT);
+	//ds_light_fb.attach_render_buffer(ds_light_rb, GL_DEPTH_STENCIL_ATTACHMENT);
 
 	std::cout << "Deferred Shading Frame Buffer " << FB::validate() << std::endl;
 	FB::unbind(); // DS Light pass fb
@@ -553,6 +575,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	debug_fb.bind();
 
 	debug_fb.attach_texture_2d_color(debug_fb_color_tex, GL_COLOR_ATTACHMENT0);
+	//debug_fb.attach_texture_2d_stencil(debug_fb_stencil_tex, GL_STENCIL_ATTACHMENT);
 	debug_fb.attach_texture_2d_depth(debug_fb_depth_tex, GL_DEPTH_ATTACHMENT);
 
 	std::cout << "Debug Frame Buffer " << FB::validate() << std::endl;
@@ -575,8 +598,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	//in opengl 4.x binding point can be specified in shader
 	//bind shader program to binding point 1
-	/*unsigned int vp_index = glGetUniformBlockIndex(basic_shader_program.id, "VP");
-	glUniformBlockBinding(basic_shader_program.id, vp_index, 1);*/ // UBOs
+	unsigned int vp_index = glGetUniformBlockIndex(basic_shader_program.id, "VP");
+	glUniformBlockBinding(basic_shader_program.id, vp_index, 1); // UBOs
+	glUniformBlockBinding(basic_shader_program_2.id, vp_index, 1); // UBOs
+	glUniformBlockBinding(basic_shader_program_3.id, vp_index, 1); // UBOs
 	
 	#pragma endregion
 
@@ -601,9 +626,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 	{
 		point_lights[i].get_transform()->set_position(point_light_positions[i]);
 		point_lights[i].get_transform()->set_scale(glm::vec3(0.1f));
-		point_lights[i].linear = 0.09f;
-		point_lights[i].quadratic = 0.032f;
-		point_lights[i].is_active = i == 0;
+		point_lights[i].linear = 0.7f;
+		point_lights[i].quadratic = 1.8f;
 		point_lights[i].set_name(std::string("point_light_").append(std::to_string(i)));
 		game_objects.push_back(&point_lights[i]);
 		lights.push_back(&point_lights[i]);
@@ -628,16 +652,19 @@ int main()  // NOLINT(bugprone-exception-escape)
 	pistol_model.get_transform()->set_scale(glm::vec3(0.025f));
 
 	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
-	floor_model.get_transform()->set_scale(glm::vec3(5, 5, 1));
-	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(5,5), glm::vec2(0,0) };
+	floor_model.get_transform()->set_scale(glm::vec3(15, 15, 1));
+	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(15,15), glm::vec2(0,0) };
 
 	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
 	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
+
+	//ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(calculate_point_light_radius(point_lights[0])));
+	ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(7));
 	
 	#pragma endregion
 
 	#pragma region Loop
-
+	
 	while(!glfwWindowShouldClose(window))
 	{
 		process_input(window);
@@ -645,68 +672,170 @@ int main()  // NOLINT(bugprone-exception-escape)
 		mvp_matrix.view = cam.get_view_matrix();
 		mvp_matrix.projection = cam.get_proj_matrix();
 		vp_ubo.buffer_data_range(0, sizeof(glm::mat4), glm::value_ptr(mvp_matrix.view));
-		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection)); // view projection 
+		vp_ubo.buffer_data_range(sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(mvp_matrix.projection)); // view projection
 
-		geometry_fb.bind();
-		FB::clear_frame();
-		
-		ds_geometry_shader_program.use();
-		ds_geometry_shader_program.set_model(barrel_model.get_transform()->get_model_matrix());
-		ds_geometry_shader_program.set_tiling_and_offset(tiling_and_offset());
-		ds_geometry_shader_program.set_vec3("viewPos", cam.get_transform()->position());
-		ds_geometry_shader_program.set_float("useNormalMaps", use_normal_maps);
-		ds_geometry_shader_program.set_float("useParallax", use_parallax);
-		barrel_model.draw(ds_geometry_shader_program);
 
-		ds_geometry_shader_program.set_model(pistol_model.get_transform()->get_model_matrix());
-		pistol_model.draw(ds_geometry_shader_program);
-
-		ds_geometry_shader_program.set_model(floor_model.get_transform()->get_model_matrix());
-		ds_geometry_shader_program.set_tiling_and_offset(floor_tiling_and_offset);
-		floor_model.draw(ds_geometry_shader_program);
-
-		FB::unbind(); //geometry pass for deferred
-
-		if(use_shadow)
+		//shadow pass
+		if (use_shadow)
 		{
 			render_omnidirectional_shadow_map(game_models, point_shadow_shader_program);
 			render_directional_shadow_map(game_models, shadow_shader_program);
+			glViewport(0, 0, WIDTH, HEIGHT);
 		} // shadow passes for each shadow casting light
+		
+		if(use_deferred)
+		{
+			geometry_fb.bind();
+			FB::clear_frame();
 
-		glViewport(0, 0, WIDTH, HEIGHT);
+			ds_geometry_shader_program.use();
+			ds_geometry_shader_program.set_tiling_and_offset(tiling_and_offset());
+			ds_geometry_shader_program.set_vec3("viewPos", cam.get_transform()->position());
+			ds_geometry_shader_program.set_float("useNormalMaps", use_normal_maps);
+			ds_geometry_shader_program.set_float("useParallax", use_parallax);
+			ds_geometry_shader_program.set_model(barrel_model.get_transform()->get_model_matrix());
+			barrel_model.draw(ds_geometry_shader_program);
 
-		ds_light_fb.bind();
-		FB::clear_frame();
+			ds_geometry_shader_program.set_model(pistol_model.get_transform()->get_model_matrix());
+			pistol_model.draw(ds_geometry_shader_program);
 
-		ds_dir_light_shader_program.use();
-		send_dir_light_to_shader(ds_dir_light_shader_program);
-		ds_dir_light_shader_program.set_vec3("viewPos", cam.get_transform()->position());
-		ds_dir_light_shader_program.set_matrix("lightView", dir_shadow_map_mvp_matrix.view);
-		ds_dir_light_shader_program.set_matrix("lightProjection", dir_shadow_map_mvp_matrix.projection);
-		ds_dir_light_shader_program.set_int("gPos", 0);
-		ds_dir_light_shader_program.set_int("gNormal", 1);
-		ds_dir_light_shader_program.set_int("gDiffSpec", 2);
-		ds_dir_light_shader_program.set_int("shadowMap", 3);
-		ds_dir_light_shader_program.set_float("useShadow", use_shadow);
+			ds_geometry_shader_program.set_model(floor_model.get_transform()->get_model_matrix());
+			ds_geometry_shader_program.set_tiling_and_offset(floor_tiling_and_offset);
+			floor_model.draw(ds_geometry_shader_program);
 
-		texture::activate(GL_TEXTURE0);
-		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0)->bind();
+			debug_fb.bind_draw();
+			glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
-		texture::activate(GL_TEXTURE1);
-		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT1)->bind();
+			ds_light_fb.bind_draw();
+			glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+			glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 
-		texture::activate(GL_TEXTURE2);
-		geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT2)->bind();
+			FB::unbind(); //geometry pass for deferred
 
-		texture::activate(GL_TEXTURE3);
-		shadow_fb.get_depth_attachment_tex()->bind();
 
-		ds_dir_light_quad_model.draw(ds_dir_light_shader_program);
 
-		FB::unbind();
+			glViewport(0, 0, WIDTH, HEIGHT);
+			//render_ds_geometry(ds_geometry_shader_program);
 
-		glViewport(0, 0, WIDTH, HEIGHT);
+			ds_light_fb.bind();
+			glBlendFunc(GL_ONE, GL_ONE);
+			FB::clear_color_buffer();
 
+			if (dir_light.is_active)
+			{
+				FB::set_depth_testing(false);
+				FB::set_depth_writing(false);
+				ds_dir_light_shader_program.use();
+
+				send_dir_light_to_shader(ds_dir_light_shader_program);
+				ds_dir_light_shader_program.set_vec3("viewPos", cam.get_transform()->position());
+				ds_dir_light_shader_program.set_matrix("lightView", dir_shadow_map_mvp_matrix.view);
+				ds_dir_light_shader_program.set_matrix("lightProjection", dir_shadow_map_mvp_matrix.projection);
+				ds_dir_light_shader_program.set_int("gPos", 0);
+				ds_dir_light_shader_program.set_int("gNormal", 1);
+				ds_dir_light_shader_program.set_int("gDiffSpec", 2);
+				ds_dir_light_shader_program.set_int("shadowMap", 3);
+				ds_dir_light_shader_program.set_float("useShadow", use_shadow);
+
+				texture::activate(GL_TEXTURE0);
+				geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0)->bind();
+
+				texture::activate(GL_TEXTURE1);
+				geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT1)->bind();
+
+				texture::activate(GL_TEXTURE2);
+				geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT2)->bind();
+
+				texture::activate(GL_TEXTURE3);
+				shadow_fb.get_depth_attachment_tex()->bind();
+
+				ds_dir_light_quad_model.draw(ds_dir_light_shader_program);
+			}
+
+			for (unsigned int i = 0; i < 4; i++)
+			{
+				if (point_lights[i].is_active)
+				{
+					FB::clear_stencil_buffer();
+					FB::enable_depth_testing();
+					FB::set_depth_writing(false);
+					FB::enable_stencil_testing();
+					FB::set_stencil_writing(true);
+
+					ds_point_light_sphere_model.get_mesh_ptr(0)->should_cull_face = false;
+
+					FB::set_stencil_func(GL_ALWAYS, 0, 0);
+					FB::set_stencil_op_sep(GL_BACK, GL_KEEP, GL_INCR_WRAP, GL_KEEP);
+					FB::set_stencil_op_sep(GL_FRONT, GL_KEEP, GL_DECR_WRAP, GL_KEEP);
+
+
+					ds_point_light_stcl_shader_program.use();
+					ds_point_light_sphere_model.get_transform()->set_position(point_lights[i].get_transform()->position());
+					ds_point_light_stcl_shader_program.set_model(ds_point_light_sphere_model.get_transform()->get_model_matrix());
+
+					ds_point_light_sphere_model.draw(ds_point_light_stcl_shader_program);
+
+
+
+					FB::enable_stencil_testing();
+					FB::disable_depth_testing();
+					FB::set_stencil_func(GL_NOTEQUAL, 0, 0xFF);
+					FB::set_stencil_writing(false);
+					FB::set_depth_writing(false);
+					ds_point_light_sphere_model.get_mesh_ptr(0)->should_cull_face = true;
+					ds_point_light_sphere_model.get_mesh_ptr(0)->cull_face = GL_FRONT;
+
+
+					ds_point_light_shader_program.use();
+					send_point_light_to_shader(ds_point_light_shader_program, point_lights[i]);
+					ds_point_light_shader_program.set_vec3("viewPos", cam.get_transform()->position());
+					ds_point_light_shader_program.set_int("gPos", 0);
+					ds_point_light_shader_program.set_int("gNormal", 1);
+					ds_point_light_shader_program.set_int("gDiffSpec", 2);
+					ds_point_light_shader_program.set_int("pointShadowMap", 3);
+					ds_point_light_shader_program.set_float("useShadow", i == 0);
+					ds_point_light_shader_program.set_float("farPlane", RADIUS);
+
+					ds_point_light_shader_program.set_model(ds_point_light_sphere_model.get_transform()->get_model_matrix());
+
+					texture::activate(GL_TEXTURE0);
+					geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0)->bind();
+
+					texture::activate(GL_TEXTURE1);
+					geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT1)->bind();
+
+					texture::activate(GL_TEXTURE2);
+					geometry_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT2)->bind();
+
+					texture::activate(GL_TEXTURE3);
+					point_shadow_fb.get_depth_attachment_tex()->bind();
+
+					//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+					ds_point_light_sphere_model.draw(ds_point_light_shader_program);
+					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+					FB::clear_stencil_buffer();
+
+					FB::disable_stencil_testing();
+					FB::enable_depth_testing();
+					FB::set_depth_writing(false);
+
+					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+					ds_point_light_sphere_model.draw(ds_point_light_shader_program);
+					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+					FB::set_depth_writing(true);
+					FB::set_stencil_writing(false);
+				}
+			}
+
+			
+			FB::set_depth_testing(true);
+			FB::set_depth_writing(true);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			FB::unbind();
+		}
+		
 		if (use_hdr)
 			hdr_fb.bind();
 		else
@@ -717,20 +846,29 @@ int main()  // NOLINT(bugprone-exception-escape)
 		render_model(barrel_model, tiling_and_offset(), basic_shader_program);
 		render_model(floor_model, floor_tiling_and_offset, basic_shader_program_2);
 		render_model(pistol_model, tiling_and_offset(), basic_shader_program_3);
-		render_light_sources(light_rep_model, light_shader_program);
-		render_skybox(skybox_renderer, skybox_shader_program);
+		//render_light_sources(light_rep_model, light_shader_program);
+		//render_skybox(skybox_renderer, skybox_shader_program);
 		
 		FB::unbind(); // render normally, with HDR or Multisampling
 
-		if (use_hdr)
-			hdr_fb.bind_read();
+
+		if(use_deferred)
+		{
+			ds_light_fb.bind_read();
+		}
 		else
-			ms_fb.bind_read();
+		{
+			if (use_hdr)
+				hdr_fb.bind_read();
+			else
+				ms_fb.bind_read();
+		}
 
 		//blit to bloom buffer
 		bloom_fb.bind_draw();
 		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
+		
 		destination_fb.bind_draw();
 		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
@@ -738,13 +876,16 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 		debug_fb.bind_draw();
 		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 		
 		FB::unbind(); // blit
 
-		if(use_bloom)
-			bloom_postprocess(screen_space_raw_quad_renderer, bloom_brightness_shader_program, blur_shader_program);
+		if (use_bloom)
+		{
+			if(use_deferred)
+				bloom_postprocess(ds_light_fb, screen_space_raw_quad_renderer, bloom_brightness_shader_program, blur_shader_program);
+			else
+				bloom_postprocess(use_hdr ? hdr_fb : ms_fb, screen_space_raw_quad_renderer, bloom_brightness_shader_program, blur_shader_program);
+		}
 		
 		FB::clear_frame();
 		render_pp_quad(screen_space_quad_renderer, screen_space_shader_program);
@@ -771,7 +912,7 @@ void render_light_sources(model& m, const shader_program& light_shader_program)
 {
 	light_shader_program.use();
 
- 	for (int i = 0; i < 4; i++)
+ 	for (int i = 0; i < lights.size(); i++)
 	{
 		light& l = (*lights[i]);
  		
@@ -789,7 +930,7 @@ void render_model(model &m, const shader_program &program)
 {
 	FB::set_depth_writing(true);
 	FB::set_depth_testing(true);
-	FB::set_stencil_writing(true);
+	FB::set_stencil_writing(false);
 	FB::set_stencil_testing(false);
 	
 	program.use();
@@ -823,19 +964,19 @@ void render_model(model &m, const shader_program &program)
 		point_shadow_fb.get_depth_attachment_tex()->bind();
 		program.set_int("pointShadowMap", 8);
 		
-		program.set_float("farPlane", 25.0f);
-		program.set_vec3("pointLights[0].lightPos", point_lights[0].get_transform()->position());
+		//program.set_vec3("pointLights[0].lightPos", point_lights[0].get_transform()->position());
 	}
+	program.set_float("farPlane", RADIUS);
 
-	FB::set_stencil_writing(true);
+	/*FB::set_stencil_writing(true);
 	FB::set_stencil_op(GL_KEEP, GL_KEEP, GL_REPLACE);
-	FB::set_stencil_func(GL_ALWAYS, 1, 0xFF);
+	FB::set_stencil_func(GL_ALWAYS, 1, 0xFF);*/
 	
 	m.draw(program);
 
-	FB::set_stencil_writing(false);
+	/*FB::set_stencil_writing(false);
 	FB::set_stencil_op(GL_KEEP, GL_KEEP, GL_KEEP);
-	FB::set_stencil_func(GL_ALWAYS, 1, 0xFF);
+	FB::set_stencil_func(GL_ALWAYS, 1, 0xFF);*/
 }
 
 void render_model(model& m, const tiling_and_offset& tiling_and_offset, const shader_program& program)
@@ -944,6 +1085,7 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	program.set_float("exposure", hdr_exposure);
 	program.set_float("useGammaCorrection", use_gamma_correction ? 1 : 0);
 	program.set_float("useHDR", use_gamma_correction ? 1 : 0);
+	program.set_float("useBloom", use_bloom);
 
 	if(use_bloom)
 	{
@@ -952,12 +1094,12 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 		//glActiveTexture(GL_TEXTURE1);
 		//pingpong_color_tex[1].bind();
 		program.set_int("bloomBlur", 1);
-		program.set_float("useBloom", use_bloom ? 1 : 0);
 	}
-	/*else
+	else
 	{
-		rend.get_mesh_ptr()->replace_textures()
-	}*/
+		texture::activate(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
 	rend.draw(program);
 }
 
@@ -969,7 +1111,7 @@ void render_directional_shadow_map(std::vector<model>& models, const shader_prog
 	FB::clear_depth_buffer();
 
 	dir_shadow_map_mvp_matrix.view = glm::lookAt(dir_light.get_transform()->position(), glm::vec3(0), glm::vec3(0, 1, 0));
-	dir_shadow_map_mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
+	//dir_shadow_map_mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
 
 	program.use();
 	program.set_view(dir_shadow_map_mvp_matrix.view);
@@ -1002,7 +1144,7 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	FB::clear_depth_buffer();
 	FB::clear_color_buffer();
 
-	const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 25.0f);
+	const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, RADIUS);
 
 	const glm::vec3 pos = point_lights[0].get_transform()->position();
 	std::vector<glm::mat4> shadow_view_matrices;
@@ -1014,7 +1156,7 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, -1.0), glm::vec3(0.0, -1.0, 0.0)));
 
 	program.use();
-	program.set_float("farPlane", 25.0f);
+	program.set_float("farPlane",RADIUS);
 	program.set_vec3("lightPos", pos);
 	program.set_matrix("lightProj", proj);
 	
@@ -1057,13 +1199,14 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	FB::unbind(); // render scene to omni directional shadow map // render scene to omnidirectional shadow map
 }
 
-void bloom_postprocess(const renderer& rend, const shader_program &bloom_brightness, const shader_program &blur)
+void bloom_postprocess(const frame_buffer& fb, const renderer& rend, const shader_program &bloom_brightness, const shader_program &blur)
 {
 	bloom_fb.bind();
 	bloom_brightness.use();
 
-	texture* pre_bloom_color_tex = use_hdr ? hdr_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0) : ms_fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0);
+	texture* pre_bloom_color_tex = fb.get_color_attachment_tex(GL_COLOR_ATTACHMENT0);
 
+	texture::activate(GL_TEXTURE0);
 	if (pre_bloom_color_tex)
 		pre_bloom_color_tex->bind();
 	
@@ -1127,7 +1270,11 @@ void render_debug_windows()
 	const ImTextureID g_normal = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT1));// NOLINT(misc-misplaced-const)
 	const ImTextureID g_diff_spec = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT2));// NOLINT(misc-misplaced-const)
 
+	const ImTextureID g_depth = reinterpret_cast<void*>(geometry_fb.get_depth_attachment());// NOLINT(misc-misplaced-const)
+
 	const ImTextureID ds_dir_light = reinterpret_cast<void*>(ds_light_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
+
+	const ImTextureID ds_light_depth = reinterpret_cast<void*>(ds_light_fb.get_depth_attachment());// NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
@@ -1144,11 +1291,11 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
-	if(ImGui::TreeNode("Directional Shadow"))
+	/*if(ImGui::TreeNode("Directional Shadow"))
 	{
 		ImGui::Image(shadow_tex_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
-	}
+	}*/
 
 	if(ImGui::TreeNode("Bloom FB Color"))
 	{
@@ -1156,9 +1303,15 @@ void render_debug_windows()
 		ImGui::TreePop();
 	}
 
-	if (ImGui::TreeNode("Deferred Dir Shadow"))
+	if (ImGui::TreeNode("Deferred Shading"))
 	{
 		ImGui::Image(ds_dir_light, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Deferred Shading Depth"))
+	{
+		ImGui::Image(ds_light_depth, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
@@ -1179,6 +1332,12 @@ void render_debug_windows()
 		ImGui::Image(g_diff_spec, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
+
+	if (ImGui::TreeNode("G Depth"))
+	{
+		ImGui::Image(g_depth, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
 	
 
 	ImGui::End();
@@ -1191,6 +1350,7 @@ void render_debug_windows()
 	ImGui::Checkbox("Use HDR", &use_hdr);
 	ImGui::Checkbox("Use Gamma Correction", &use_gamma_correction);
 	ImGui::Checkbox("Use Bloom", &use_bloom);
+	ImGui::Checkbox("Use Deferred", &use_deferred);
 
 	ImGui::Spacing();
 
@@ -1245,8 +1405,6 @@ void render_debug_windows()
 			ImGui::TreePop();
 		}
 	}
-	
-	
 
 	ImGui::End();
 
@@ -1290,16 +1448,16 @@ void send_point_lights_to_shader(const shader_program& program)
 			str.append("].");
 
 			program.set_vec3(std::string(str + "lightPos"), point_lights[j].get_transform()->position());
-			program.set_vec3(std::string(str + "specularColor", j), point_lights[j].specular.to_vec3());
-			program.set_vec3(std::string(str + "diffuseColor", j), point_lights[j].diffuse.to_vec3());
+			program.set_vec3(std::string(str + "specularColor"), point_lights[j].specular.to_vec3());
+			program.set_vec3(std::string(str + "diffuseColor"), point_lights[j].diffuse.to_vec3());
 
-			program.set_float(std::string(str + "diffuseIntensity", j), point_lights[j].diff_intensity);
+			program.set_float(std::string(str + "diffuseIntensity"), point_lights[j].diff_intensity);
 
-			program.set_float(std::string(str + "specularIntensity", j), point_lights[j].spec_intensity);
+			program.set_float(std::string(str + "specularIntensity"), point_lights[j].spec_intensity);
 
-			program.set_float(std::string(str + "linear", j), point_lights[j].linear);
+			program.set_float(std::string(str + "linear"), point_lights[j].linear);
 
-			program.set_float(std::string(str + "quadratic", j), point_lights[j].quadratic);
+			program.set_float(std::string(str + "quadratic"), point_lights[j].quadratic);
 		}
 		else
 		{
@@ -1307,9 +1465,37 @@ void send_point_lights_to_shader(const shader_program& program)
 			str.append(std::to_string(j));
 			str.append("].");
 
-			program.set_vec3(std::string(str + "specularColor", j), point_lights[j].specular.to_vec3() * 0.0f);
-			program.set_vec3(std::string(str + "diffuseColor", j), point_lights[j].diffuse.to_vec3() * 0.0f);
+			program.set_vec3(std::string(str + "specularColor"), point_lights[j].specular.to_vec3() * 0.0f);
+			program.set_vec3(std::string(str + "diffuseColor"), point_lights[j].diffuse.to_vec3() * 0.0f);
 		}
+	}
+}
+
+void send_point_light_to_shader(const shader_program& program, const point_light& light)
+{
+	program.use();
+	if (light.is_active)
+	{
+		const std::string  str = "pointLight.";
+
+		program.set_vec3(std::string(str + "lightPos"), light.get_transform()->position());
+		program.set_vec3(std::string(str + "specularColor"), light.specular.to_vec3());
+		program.set_vec3(std::string(str + "diffuseColor"), light.diffuse.to_vec3());
+
+		program.set_float(std::string(str + "diffuseIntensity"), light.diff_intensity);
+
+		program.set_float(std::string(str + "specularIntensity"), light.spec_intensity);
+
+		program.set_float(std::string(str + "linear"), light.linear);
+
+		program.set_float(std::string(str + "quadratic"), light.quadratic);
+	}
+	else
+	{
+		const std::string  str = "pointLight.";
+
+		program.set_vec3(std::string(str + "specularColor"), light.specular.to_vec3() * 0.0f);
+		program.set_vec3(std::string(str + "diffuseColor"), light.diffuse.to_vec3() * 0.0f);
 	}
 }
 
@@ -1348,6 +1534,60 @@ void send_material_data_to_shader(const shader_program& program)
 
 	program.set_vec3("ambientColor", ambient_color.to_vec3());
 	program.set_float("time", static_cast<float>(glfwGetTime()));
+}
+
+float calculate_point_light_radius(point_light& light)
+{
+	const float max_channel = fmax(fmax(light.diffuse.r, light.diffuse.g), light.diffuse.b);
+
+	const float ret = (-light.linear + sqrtf(light.linear * light.linear -
+		4.0f * light.quadratic * (1.0f - (256.0f/3.0f) * max_channel * light.diff_intensity)))
+		/
+		(2.0f * light.quadratic);
+	return ret;
+}
+
+#pragma endregion
+
+#pragma region Deferred Shading
+
+void render_ds_geometry(const shader_program& program)
+{
+	geometry_fb.bind();
+	FB::clear_frame();
+
+	program.use();
+	program.set_vec3("viewPos", cam.get_transform()->position());
+	program.set_float("useNormalMaps", use_normal_maps);
+	program.set_float("useParallax", use_parallax);
+
+	for (auto &game_model : game_models)
+	{
+		program.set_model(game_model.get_transform()->get_model_matrix());
+		tiling_and_offset t = tiling_and_offset();
+		t.tiling = glm::vec2(game_model.get_transform()->scale());
+		program.set_tiling_and_offset(t);
+		game_model.draw(program);
+	}
+	/*ds_geometry_shader_program.set_model(barrel_model.get_transform()->get_model_matrix());
+	ds_geometry_shader_program.set_tiling_and_offset(tiling_and_offset());
+	barrel_model.draw(ds_geometry_shader_program);
+
+	ds_geometry_shader_program.set_model(pistol_model.get_transform()->get_model_matrix());
+	pistol_model.draw(ds_geometry_shader_program);
+
+	ds_geometry_shader_program.set_model(floor_model.get_transform()->get_model_matrix());
+	ds_geometry_shader_program.set_tiling_and_offset(floor_tiling_and_offset);
+	floor_model.draw(ds_geometry_shader_program);*/
+
+
+	debug_fb.bind_draw();
+	glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+
+	ds_light_fb.bind_draw();
+	glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+	glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, 0, WIDTH, HEIGHT, GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+	FB::unbind(); //geometry pass for deferred
 }
 
 #pragma endregion

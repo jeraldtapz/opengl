@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 
 #define NR_PT_LIGHTS 4
 
@@ -95,30 +95,26 @@ uniform float farPlane;
 uniform float useShadow;
 uniform float useNormalMaps;
 uniform float useParallax;
+uniform PointLight pointLights_p[4];
 
 void main()
 {
 	vec4 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0));
 
+	float pointShadow = CalculatePointShadow() * useShadow;
+	float dirShadow = CalculateDirectionalShadow() * useShadow;
+
 	vec3 pointLightContrib;
 
 	for(int i = 0; i < NR_PT_LIGHTS; i++)
 	{
-		pointLightContrib += CalculatePointLight(PointLightsTangent[i]);
+		pointLightContrib += (1 - pointShadow * when_lt(i, 1)) * CalculatePointLight(PointLightsTangent[i]);
 	}
 	vec3 dirLightContrib = CalculateDirectionalLight();
 	vec3 spotLightContrib = CalculateSpotLightContrib(SpotLightTangent) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
-//	vec3 reflectionContrib = 0.25f * CalculateReflectionContrib();
-	float pointShadow = CalculatePointShadow() * useShadow;
-	float dirShadow = CalculateDirectionalShadow() * useShadow;
 
-	vec3 fragToLight = FragPosTangent - PointLightsTangent[0].lightPos;
-	float closestDepth = texture(pointShadowMap, fragToLight).r;
-
-	FragColor =  vec4(((1 - pointShadow) * pointLightContrib + (1 - dirShadow) * dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
-//	FragColor =  vec4((1 - pointShadow) * (pointLightContrib + dirLightContrib + spotLightContrib) + ambientContrib, diffColor.a);
-//	FragColor = vec4(vec3(closestDepth), 1.0);
+	FragColor =  vec4(((1 - dirShadow) * dirLightContrib) + pointLightContrib + spotLightContrib + ambientContrib, diffColor.a);
 }
 
 vec3 CalculateDirectionalLight()
@@ -126,7 +122,7 @@ vec3 CalculateDirectionalLight()
 	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
+	normal = (useNormalMaps) * normalize(normal) + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	vec3 fragToLight = -DirLightTangent.lightDir;
 
@@ -138,11 +134,11 @@ vec3 CalculateDirectionalLight()
 	vec3 diffuse = diffuseStrength * DirLightTangent.diffuseColor * DirLightTangent.diffuseIntensity * mat.diffuseColor;
 
 	float specularStrength = pow(max(dot(normal, halfwayDir), 0), mat.shininess);
-	vec3 specular = specularStrength * DirLightTangent.specularColor * DirLightTangent.specularIntensity * mat.specularColor;
+	vec3 specular = specularStrength * DirLightTangent.specularColor * DirLightTangent.specularIntensity;
 
 
 	vec3 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0)).rgb;
-	vec3 specColor = texture(mat.specularTexture0,  GetTexCoords(1.0)).rgb;
+	float specColor = texture(mat.specularTexture0,  GetTexCoords(1.0)).r;
 
 	vec3 result = diffColor * diffuse + specColor * specular; 
 
@@ -227,7 +223,7 @@ float CalculateDirectionalShadow()
 	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
 
-	normal = normalize(NormalTangent);
+	normal = useNormalMaps * normalize(normal) + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	vec3 fragToLight = normalize(-DirLightTangent.lightDir);
 

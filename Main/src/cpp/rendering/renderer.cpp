@@ -21,8 +21,13 @@ void renderer::draw(const shader_program &program) const
 	if(mesh_ptr->should_cull_face)
 	{
 		glEnable(GL_CULL_FACE);
-		glCullFace(mesh_ptr->cull_face);
 	}
+	else
+	{
+		glDisable(GL_CULL_FACE);
+	}
+
+	glCullFace(mesh_ptr->cull_face);
 
 	program.use();
 	
@@ -66,10 +71,10 @@ void renderer::draw(const shader_program &program) const
 			}
 			case texture_type::color:
 			case texture_type::depth:
-			
 			case texture_type::stencil:
+			case texture_type::height:
 			{
-				number = "";
+				number = "0";
 				break;
 			}
 			case texture_type::depth_stencil:
@@ -78,6 +83,7 @@ void renderer::draw(const shader_program &program) const
 		}
 
 		texture::activate(GL_TEXTURE0 + i);
+		glBindTexture(mesh_ptr->textures[i].get_is_multi_sampled() ? GL_TEXTURE_2D_MULTISAMPLE: GL_TEXTURE_2D, 0);
 		mesh_ptr->textures[i].bind();
 		program.set_int(setting_name.append(tex_type_str).append(number), i);
 	}
@@ -98,8 +104,12 @@ void renderer::draw_instanced(const shader_program& program, const unsigned int 
 	if (mesh_ptr->should_cull_face)
 	{
 		glEnable(GL_CULL_FACE);
-		glCullFace(mesh_ptr->cull_face);
 	}
+	else
+	{
+		glDisable(GL_CULL_FACE);
+	}
+	glCullFace(mesh_ptr->cull_face);
 
 	program.use();
 

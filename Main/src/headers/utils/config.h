@@ -15,6 +15,6 @@ public:
 	static const color CLEAR_COLOR;
 	static const std::string VERTEX_SHADER_DEFAULT;
 	static const std::string FRAGMENT_SHADER_DEFAULT;
-	constexpr static const float MOVE_SPEED{ 2.5f };
+	constexpr static const float MOVE_SPEED{ 5.0f };
 	constexpr static const float MOUSE_SENSITIVITY{ 0.05f };
 };

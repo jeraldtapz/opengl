@@ -239,3 +239,9 @@ std::vector<mesh> model::get_meshes() const
 {
 	return meshes;
 }
+
+mesh* model::get_mesh_ptr(const int index)
+{
+	return renderers[index].get_mesh_ptr().get();
+}
+

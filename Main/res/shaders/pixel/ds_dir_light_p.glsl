@@ -35,12 +35,17 @@ void main()
 	float shadow = CalculateDirectionalShadow(worldPos, worldNormal);
 
 	vec3 color = CalculateDirectionalLight(worldPos, worldNormal, diffSpec);
-//	color += vec3(0.1);
 	FragColor = vec4(color * (1 - shadow), 1.0);
 
-	//temporary gamma correction
-	float gamma = 2.2;
-	FragColor = vec4(pow(FragColor.rgb, vec3(1.0/gamma)), 1.0);
+	//tonemapping
+//	vec3 c = FragColor.rgb;
+//	vec3 hdrColor = c / (c + vec3(1));
+//	hdrColor = vec3(1.0) - exp(-c * 1);
+//	FragColor.rgb = hdrColor;
+//
+//	//temporary gamma correction
+//	float gamma = 2.2;
+//	FragColor = vec4(pow(FragColor.rgb, vec3(1.0/gamma)), FragColor.a);
 }
 
 vec3 CalculateDirectionalLight(vec3 pos, vec3 normal, vec4 diffSpec)
@@ -54,14 +59,14 @@ vec3 CalculateDirectionalLight(vec3 pos, vec3 normal, vec4 diffSpec)
 	float diffuseStrength = max(dot(normal, fragToLight), 0);
 	vec3 diffuse = diffuseStrength * dirLight.diffuseColor * dirLight.diffuseIntensity;
 
-	float specularStrength = pow(max(dot(normal, halfwayDir), 0), 64.0f);
+	float specularStrength = pow(max(dot(normal, halfwayDir), 0), 32.0f);
 	vec3 specular = specularStrength * dirLight.specularColor * dirLight.specularIntensity;
 
 
 	vec3 diffColor = diffSpec.rgb;
 	vec3 specColor = specular * diffSpec.a;
 
-	vec3 result = diffColor * diffuse + specColor * specular; 
+	vec3 result = diffColor * diffuse + specColor; 
 
 	return result;
 }
