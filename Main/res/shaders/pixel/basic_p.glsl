@@ -150,7 +150,7 @@ vec3 CalculatePointLight(PointLight light)
 	vec3 normal = texture(mat.normalTexture0, GetTexCoords(1.0)).rgb;
 	normal = normal * 2 - 1.0;
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
+	normal = (useNormalMaps) * normalize(normal) + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
 
@@ -168,7 +168,7 @@ vec3 CalculatePointLight(PointLight light)
 	vec3 specular = specularStrength * light.specularColor * light.specularIntensity * mat.specularColor;
 
 	vec3 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0)).rgb;
-	vec3 specColor = texture(mat.specularTexture0, GetTexCoords(1.0)).rgb;
+	float specColor = texture(mat.specularTexture0,  GetTexCoords(1.0)).r * 0;
 
 	vec3 result = diffColor * diffuse + specColor * specular; 
 	result *= attenuation;
@@ -259,7 +259,7 @@ float CalculatePointShadow()
 	vec3 normal = texture(mat.normalTexture0, GetTexCoords(0.0)).rgb;
 	normal = normal * 2 - 1.0;
 
-	normal = (useNormalMaps) * normal + (1 - useNormalMaps) * normalize(NormalTangent);
+	normal = (useNormalMaps) * normalize(normal) + (1 - useNormalMaps) * normalize(NormalTangent);
 
 	float bias = max(0.05 * (1.0 - dot(normal, normalize(fragToLight))), 0.005);
 	float currentDepth = length(fragToLight);

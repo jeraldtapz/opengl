@@ -115,7 +115,7 @@ bool is_flash_light_on = false;
 bool is_open;
 bool use_shadow = true;
 bool use_normal_maps = true;
-bool use_parallax = true;
+bool use_parallax = false;
 bool use_gamma_correction = true;
 bool use_hdr = true;
 bool use_bloom = true;
@@ -620,7 +620,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	dir_light.diff_intensity = 0.5f;
 	game_objects.push_back(&dir_light);
 	lights.push_back(&dir_light);
-	dir_shadow_map_mvp_matrix.projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.f);
+	dir_shadow_map_mvp_matrix.projection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, 1.0f, 200.f);
 	
 	for (size_t i = 0; i < 4 ; i++)
 	{
@@ -658,8 +658,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
 	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
 
-	//ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(calculate_point_light_radius(point_lights[0])));
-	ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(7));
+	ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(calculate_point_light_radius(point_lights[0])));
+	//ds_point_light_sphere_model.get_transform()->set_scale(glm::vec3(7));
 	
 	#pragma endregion
 
@@ -1541,7 +1541,7 @@ float calculate_point_light_radius(point_light& light)
 	const float max_channel = fmax(fmax(light.diffuse.r, light.diffuse.g), light.diffuse.b);
 
 	const float ret = (-light.linear + sqrtf(light.linear * light.linear -
-		4.0f * light.quadratic * (1.0f - (256.0f/3.0f) * max_channel * light.diff_intensity)))
+		4.0f * light.quadratic * (1.0f - (256.0f/0.1f) * max_channel * light.diff_intensity)))
 		/
 		(2.0f * light.quadratic);
 	return ret;
