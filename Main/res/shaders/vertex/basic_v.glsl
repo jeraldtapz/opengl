@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
@@ -57,6 +57,7 @@ layout(std140, binding = 1) uniform VP
 	mat4 projection;
 };
 
+uniform float hack;
 uniform vec3 viewPos;
 uniform mat4 model;
 uniform mat4 lightView;
@@ -69,6 +70,12 @@ uniform PointLight pointLights[4];
 void main()
 {
 	gl_Position = projection * view * model * vec4(aPos, 1.0); // fragment position in clip space
+
+	//use it here so that pointLights will not be automatically removed by compiler
+	for(int i = 0; i < 4; i++)
+	{
+		gl_Position += vec4(hack * pointLights[i].lightPos, 0.0);
+	}
 	TexCoord = aTexCoord;
 
 	vec3 T = normalize(vec3(model * vec4(aTangent, 0.0)));
@@ -105,6 +112,4 @@ void main()
 	SpotLightTangent = spotLight;
 	SpotLightTangent.lightPos = inverseTBN * SpotLightTangent.lightPos;
 	SpotLightTangent.spotDirection = inverseTBN * SpotLightTangent.spotDirection;
-
-
 }

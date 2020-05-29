@@ -202,6 +202,11 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\pixel\basic_p.glsl" />
     <None Include="res\shaders\pixel\bloom_brightness_p.glsl" />
     <None Include="res\shaders\pixel\blur_p.glsl" />
+    <None Include="res\shaders\pixel\ds_dir_light_p.glsl" />
+    <None Include="res\shaders\pixel\ds_geometry_p.glsl" />
+    <None Include="res\shaders\pixel\ds_point_light_p.glsl" />
+    <None Include="res\shaders\pixel\ds_point_light_stcl_p.glsl" />
+    <None Include="res\shaders\pixel\light_debug_p.glsl" />
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
     <None Include="res\shaders\pixel\planet_p.glsl" />
@@ -213,6 +218,10 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\vertex\basic_v.glsl" />
     <None Include="res\shaders\vertex\bloom_brightness_v.glsl" />
     <None Include="res\shaders\vertex\blur_v.glsl" />
+    <None Include="res\shaders\vertex\ds_dir_light_v.glsl" />
+    <None Include="res\shaders\vertex\ds_geometry_v.glsl" />
+    <None Include="res\shaders\vertex\ds_point_light_stcl_v.glsl" />
+    <None Include="res\shaders\vertex\ds_point_light_v.glsl" />
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
     <None Include="res\shaders\vertex\planet_v.glsl" />

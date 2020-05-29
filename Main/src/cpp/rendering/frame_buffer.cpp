@@ -226,8 +226,7 @@ void frame_buffer::bind_read() const
 
 void frame_buffer::clear_color_buffer()
 {
-	const color col = color(0.15f, 0.15f, 0.15f, 1.0f);
-	glClearColor(col.r, col.g, col.b, col.a);
+	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
@@ -238,12 +237,14 @@ void frame_buffer::clear_depth_buffer()
 
 void frame_buffer::clear_stencil_buffer()
 {
-	glClearStencil(0);
+	glStencilMask(~0);
+	glDisable(GL_SCISSOR_TEST);
 	glClear(GL_STENCIL_BUFFER_BIT);
 }
 
 void frame_buffer::clear_frame()
 {
+	glDisable(GL_SCISSOR_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 

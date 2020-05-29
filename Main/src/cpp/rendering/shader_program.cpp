@@ -70,11 +70,13 @@ void shader_program::set_bool(const std::string& name, const bool value) const
 
 void shader_program::set_float(const std::string& name, const float value) const
 {
+	const auto loc = glGetUniformLocation(id, name.c_str());
 	glUniform1f(glGetUniformLocation(id, name.c_str()), value);
 }
 
 void shader_program::set_int(const std::string& name, const int value) const
 {
+	const auto loc = glGetUniformLocation(id, name.c_str());
 	glUniform1i(glGetUniformLocation(id, name.c_str()), value);
 }
 
@@ -91,6 +93,7 @@ void shader_program::set_vec2(const std::string& name, const glm::vec2 value) co
 
 void shader_program::set_vec3(const std::string& name, const glm::vec3 value) const
 {
+	//const GLint loc = glGetUniformLocation(id, name.c_str());
 	glUniform3f(glGetUniformLocation(id, name.c_str()), value.x, value.y, value.z);
 }
 

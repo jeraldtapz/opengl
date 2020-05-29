@@ -27,6 +27,7 @@ public:
 	void load(const std::string &path);
 	void deallocate();
 	std::vector<mesh> get_meshes() const;
+	mesh* get_mesh_ptr(int index);
 
 private:
 	std::vector<mesh> meshes;

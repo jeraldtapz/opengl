@@ -225,8 +225,8 @@ mesh create_quad()
 
 mesh create_sphere()
 {
-	const model sphere_model = model("res/models/sphere/sphere.obj", true);
-	return sphere_model.get_meshes()[0];
+	model sphere_model = model("res/models/sphere/sphere.obj", true);
+	return *sphere_model.get_mesh_ptr(0);
 }
 
 

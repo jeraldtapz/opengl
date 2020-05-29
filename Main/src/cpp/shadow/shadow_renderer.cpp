@@ -43,8 +43,13 @@ void shadow_renderer::draw(const shader_program& program) const
 	if (mesh_ptr->should_cull_face)
 	{
 		glEnable(GL_CULL_FACE);
-		glCullFace(mesh_ptr->cull_face);
 	}
+	else
+	{
+		glDisable(GL_CULL_FACE);
+	}
+
+	glCullFace(mesh_ptr->cull_face);
 
 	program.use();
 
@@ -88,10 +93,10 @@ void shadow_renderer::draw(const shader_program& program) const
 		}
 		case texture_type::color:
 		case texture_type::depth:
-
+		case texture_type::height:
 		case texture_type::stencil:
 		{
-			number = "";
+			number = "0";
 			break;
 		}
 		case texture_type::depth_stencil:

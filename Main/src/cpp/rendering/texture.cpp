@@ -314,12 +314,12 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::normal:return "normalTexture" ;
 		case texture_type::specular: return "specularTexture";
 		case texture_type::reflection: return "reflectionTexture";
+		case texture_type::height: return "heightTexture";
 		case texture_type::color: return "color";
 		case texture_type::depth: return "depth";
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
 		case texture_type::cube: return "cube";
-		case texture_type::height: return "height";
 	default: return "error";
 	}
 }

@@ -1,6 +1,6 @@
 #include "rendering/render_buffer.h"
 
-render_buffer::render_buffer(const GLenum internal_format, const unsigned width, const unsigned height)
+render_buffer::render_buffer(const GLenum internal_format, const unsigned int width, const unsigned int height)
 {
 	id = 0;
 	this->width = width;
