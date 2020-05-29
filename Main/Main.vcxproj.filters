@@ -169,6 +169,7 @@
     <None Include="res\shaders\pixel\ds_point_light_p.glsl" />
     <None Include="res\shaders\vertex\ds_point_light_stcl_v.glsl" />
     <None Include="res\shaders\pixel\ds_point_light_stcl_p.glsl" />
+    <None Include="res\shaders\pixel\light_debug_p.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">

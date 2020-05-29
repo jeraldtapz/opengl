@@ -11,6 +11,8 @@ public:
 	float diff_intensity;
 	float spec_intensity;
 
+	bool casts_shadow {false};
+
 	light();
 	light(color, color);
 };

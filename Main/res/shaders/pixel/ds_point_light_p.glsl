@@ -28,6 +28,7 @@ uniform PointLight pointLight;
 uniform vec3 viewPos;
 uniform float farPlane;
 uniform float useShadow;
+uniform float useDebug;
 
 
 void main()
@@ -39,7 +40,7 @@ void main()
 
 	float shadow = CalculatePointShadow(worldPos, normal);
 	vec3 col = CalculatePointLight(normal, worldPos, diffSpec, pointLight);
-	FragColor = vec4(col * (1 - shadow) , 1.0f);
+	FragColor = (1 - useDebug) * vec4(col * (1 - shadow) , 1.0f) + vec4(pointLight.diffuseColor , 1) * useDebug;
 
 	//tonemapping
 //	vec3 c = FragColor.rgb;
