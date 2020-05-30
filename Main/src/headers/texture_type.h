@@ -12,4 +12,5 @@ enum class texture_type
 	depth_stencil,
 	cube,
 	height,
+	mask
 };

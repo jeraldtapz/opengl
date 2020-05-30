@@ -96,6 +96,7 @@ void model::load_model(const std::string& path)
 
 	directory = path.substr(0, path.find_last_of('/'));
 
+	std::cout << "Scene has " << scene->mNumMaterials << " materials." << std::endl;
 	process_node(scene->mRootNode, scene);
 	is_model_loaded = true;
 }
@@ -104,6 +105,7 @@ void model::process_node(aiNode* node, const aiScene* scene)
 {
 	for (unsigned int i = 0; i < node->mNumMeshes; i++)
 	{
+		std::cout << "Processing node " << node->mName.C_Str() << std::endl;
 		//node->mMeshes contains indices of meshes on the global meshes collection scene->mMeshes
 		aiMesh* ai_mesh = scene->mMeshes[node->mMeshes[i]];
 
@@ -181,6 +183,8 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 	{
 		aiMaterial* material = scene->mMaterials[m->mMaterialIndex];
 		
+
+		
 		std::vector<texture> diffuse_textures = load_material_textures(material, aiTextureType_DIFFUSE, texture_type::diffuse);
 		textures.insert(textures.end(), diffuse_textures.begin(), diffuse_textures.end());
 
@@ -194,6 +198,7 @@ mesh model::process_mesh(aiMesh* m, const aiScene* scene)
 		textures.insert(textures.end(), reflection_textures.begin(), reflection_textures.end());*/
 	}
 
+	std::cout << "Processed mesh " << m->mName.C_Str() << std::endl << std::endl;
 	return mesh(vertices, indices, textures);
 }
 
@@ -213,6 +218,9 @@ std::vector<texture> model::load_material_textures(aiMaterial* mat, aiTextureTyp
 		path.append("/").append(str.C_Str());
 		texture tex = texture(path, tex_type, GL_UNSIGNED_BYTE, true);
 
+
+		std::cout << "Loaded textures from " << path << std::endl;
+		
 		textures.push_back(tex);
 		textures_loaded.insert(std::pair<std::string, texture>(str.C_Str(), tex));
 	}

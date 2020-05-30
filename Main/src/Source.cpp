@@ -36,7 +36,6 @@
 #include "rendering/material.h"
 #include "rendering/renderer.h"
 #include "rendering/render_buffer.h"
-#include "rendering/transparent_renderer.h"
 #include "rendering/uniform_buffer_object.h"
 #include "utils/config.h"
 
@@ -55,6 +54,7 @@ void render_model_outline(model& m, const shader_program& program);
 void render_transparent_quads(const std::vector<game_object> &quads, const renderer& rend, const shader_program& program);
 void render_skybox(const renderer& rend, const shader_program& program);
 void render_pp_quad(const renderer& rend, const shader_program& program);
+void render_forward(const shader_program& program);
 void render_directional_shadow_map(std::vector<model> &models, const shader_program& program);
 void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program& program);
 void bloom_postprocess(const frame_buffer& fb, const renderer& rend, const shader_program& bloom_brightness, const shader_program& blur);
@@ -325,27 +325,22 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma region Loaded Textures
 	
-	const texture container_diff_tex = texture(get_tex("rocks0/rocks0_color.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture container_spec_tex = texture(get_tex("rocks0/rocks0_specular.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
-	const texture container_norm_tex = texture(get_tex("rocks0/rocks0_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
-
-	const texture window_tex = texture(get_tex("window.png"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
-
 	const texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
 	const texture floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
 	const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), TEX_T::height, GL_UNSIGNED_BYTE, true);
 	const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
 
+	const texture steampunk_glasses_mask_tex = texture("res/models/steampunk_glasses/textures/DefaultMaterial_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
 	std::string skybox_texture_paths[] = {
-		"res/textures/skybox_5/px.png",
-		"res/textures/skybox_5/nx.png" ,
-		"res/textures/skybox_5/ny.png",
-		"res/textures/skybox_5/py.png",
-		"res/textures/skybox_5/pz.png",
-		"res/textures/skybox_5/nz.png"
+		"res/textures/skybox_2/px.jpg",
+		"res/textures/skybox_2/nx.jpg" ,
+		"res/textures/skybox_2/ny.jpg",
+		"res/textures/skybox_2/py.jpg",
+		"res/textures/skybox_2/pz.jpg",
+		"res/textures/skybox_2/nz.jpg"
 	};
-	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE); // textures
+	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE); // textures
 
 	#pragma endregion
 
@@ -361,7 +356,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	texture debug_fb_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
 	texture debug_fb_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT32F, GL_FLOAT, false);
-	texture debug_fb_stencil_tex = texture(TEX_T::stencil, WIDTH, HEIGHT, GL_STENCIL_INDEX, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, false);
 
 	texture ms_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, false, SAMPLES);
 	texture ms_depth_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, false, SAMPLES);
@@ -384,33 +378,18 @@ int main()  // NOLINT(bugprone-exception-escape)
 	texture geometry_depth_stencil_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, false);
 	
 	texture ds_light_color_tex = texture(TEX_T::color, WIDTH, HEIGHT, GL_RGBA, GL_RGBA16F, GL_FLOAT, false);
-	render_buffer ds_light_rb = render_buffer(GL_DEPTH32F_STENCIL8, WIDTH, HEIGHT);
 	texture ds_light_depth_stencil_tex = texture(TEX_T::depth, WIDTH, HEIGHT, GL_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, false);
 	
 	#pragma endregion
 	
 	#pragma region Meshes
 	
-	std::vector<texture> cube_textures = { container_diff_tex, container_spec_tex , container_norm_tex };
-	mesh cube_mesh = primitive::get_cube();
-	cube_mesh.replace_textures(cube_textures);
-	cube_mesh.is_indexed = false;
-	cube_mesh.should_cull_face = false;
-
-	
 	std::vector<texture> skybox_textures = { skybox_tex };
 	mesh skybox_cube_mesh = primitive::get_cube();
 	skybox_cube_mesh.replace_textures(skybox_textures);
 	skybox_cube_mesh.is_indexed = false;
 	skybox_cube_mesh.should_cull_face = false;
-
-
-	std::vector<texture> quad_textures = { window_tex };
-	mesh transparent_quad_mesh = primitive::get_quad();
-	transparent_quad_mesh.replace_textures(quad_textures);
-	transparent_quad_mesh.is_transparent = true;
-	transparent_quad_mesh.is_indexed = false;
-	transparent_quad_mesh.should_cull_face = false;
+	
 
 	std::vector<texture> floor_textures = { floor_tex, floor_spec_tex, floor_normal_tex , floor_height_tex };
 	mesh floor_mesh = primitive::get_quad();
@@ -445,9 +424,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma region Renderers and  Model
 
-	renderer cube_renderer = renderer(std::make_shared<mesh>(cube_mesh));
 	renderer skybox_renderer = renderer(std::make_shared<mesh>(skybox_cube_mesh));
-	transparent_renderer quad_renderer = transparent_renderer(std::make_shared<mesh>(transparent_quad_mesh));
 	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(destination_quad_mesh));
 	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
 	renderer floor_renderer = renderer(std::make_shared<mesh>(floor_mesh)); //Renderers
@@ -457,10 +434,16 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	model pistol_model = model("res/models/pistol/scene.gltf", true);
 	pistol_model.set_name("Pistol");
-	
+
+	model steampunk_glasses = model("res/models/steampunk_glasses/scene.gltf", true);
+	steampunk_glasses.set_name("Steampunk Glasses");
+
+	model canon_lens = model("res/models/len_canon/scene.gltf", true);
+	canon_lens.set_name("Canon Lens");
+
 	model light_rep_model = model({ primitive::get_sphere() });
-	model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
-	model planet = model("res/models/planet/planet.obj", false);
+	//model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
+	//model planet = model("res/models/planet/planet.obj", false);
 
 	srand(static_cast<unsigned int>(glfwGetTime()));
 	float radius = 50.0f;
@@ -488,9 +471,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 		asteroid_model_matrices[i] = m;
 	} //Loaded models
 	
-	std::vector<mesh> cube_meshes = { cube_mesh };
+	/*std::vector<mesh> cube_meshes = { cube_mesh };
 	model cube_model = model(cube_meshes);
-	cube_model.set_name("Cube");
+	cube_model.set_name("Cube");*/
 
 	std::vector<mesh> floor_meshes = { floor_mesh };
 	model floor_model = model(floor_meshes); //generated models
@@ -498,9 +481,11 @@ int main()  // NOLINT(bugprone-exception-escape)
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
 	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
-	game_models.push_back(barrel_model);
-	game_models.push_back(pistol_model);
+	//game_models.push_back(barrel_model);
+	//game_models.push_back(pistol_model);
 	game_models.push_back(floor_model);
+	game_models.push_back(canon_lens);
+	//game_models.push_back(steampunk_glasses);
 
 	#pragma endregion
 
@@ -630,7 +615,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	dir_light = directional_light();
 	dir_light.set_name("directional_light");
 	dir_light.get_transform()->set_position(glm::vec3(0, 1, 4));
-	dir_light.diff_intensity = 0.5f;
+	dir_light.diff_intensity = 2.5f;
 	game_objects.push_back(&dir_light);
 	lights.push_back(&dir_light);
 	dir_shadow_map_mvp_matrix.projection = glm::ortho(-200.0f, 200.0f, -200.0f, 200.0f, 1.0f, 200.f);
@@ -642,6 +627,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 		point_lights[i].linear = 0.0f;
 		point_lights[i].set_uniform_scale();
 		point_lights[i].set_radius_from_scale();
+		point_lights[i].diff_intensity = 10.0f;
 		point_lights[i].set_name(std::string("point_light_").append(std::to_string(i)));
 		game_objects.push_back(&point_lights[i]);
 		lights.push_back(&point_lights[i]);
@@ -671,6 +657,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
 	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
+
+	steampunk_glasses.get_transform()->set_position(glm::vec3(0, 5, 0));
+
+	canon_lens.get_transform()->set_position(glm::vec3(3, 5, 0));
 
 	#pragma endregion
 
@@ -703,7 +693,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 		}
 		else
 		{
-			if (use_hdr)
+			/*if (use_hdr)
 				hdr_fb.bind();
 			else
 				ms_fb.bind();
@@ -711,8 +701,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 			FB::clear_frame();
 
 			render_model(barrel_model, tiling_and_offset(), basic_shader_program);
-			render_model(floor_model, floor_tiling_and_offset, basic_shader_program_2);
-			render_model(pistol_model, tiling_and_offset(), basic_shader_program_3);
+			render_model(floor_model, floor_tiling_and_offset, basic_shader_program);
+			render_model(pistol_model, tiling_and_offset(), basic_shader_program);*/
+
+			render_forward(basic_shader_program);
 			render_skybox(skybox_renderer, skybox_shader_program);
 			render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
 			
@@ -766,9 +758,9 @@ void render_light_sources(model& m, const shader_program& light_shader_program)
 {
 	light_shader_program.use();
 
- 	for (int i = 0; i < lights.size(); i++)
-	{
-		light& l = (*lights[i]);
+ 	for (auto& i : lights)
+    {
+		light& l = (*i);
  		
 		if (l.get_name() == "spot_light" || !l.is_active)
 			continue;
@@ -957,6 +949,36 @@ void render_pp_quad(const renderer& rend, const shader_program& program)
 	rend.draw(program);
 }
 
+void render_forward(const shader_program& program)
+{
+	if (use_hdr)
+		hdr_fb.bind();
+	else
+		ms_fb.bind();
+
+	FB::clear_frame();
+	
+	for (auto && game_model : game_models)
+	{
+		auto model_name = game_model.get_name();
+
+		tiling_and_offset t;
+
+		if (model_name == "Floor")
+			t = tiling_and_offset{ glm::vec2(15,15), glm::vec2(0) };
+		else
+			t = tiling_and_offset();
+
+		if (glm::abs(t.tiling.x) < 1)
+			t.tiling.x = 1;
+
+		if (glm::abs(t.tiling.y) < 1)
+			t.tiling.y = 1;
+		
+		render_model(game_model, t, program);
+	}
+}
+
 void render_shadow_maps(std::vector<model>& models, const shader_program& dir_program, const shader_program& point_program)
 {
 	if(use_shadow)
@@ -1140,7 +1162,6 @@ void render_debug_windows()
 
 	const ImTextureID color_tex_id = reinterpret_cast<void*>(debug_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));  // NOLINT(misc-misplaced-const)
 	const ImTextureID depth_tex_id = reinterpret_cast<void*>(debug_fb.get_depth_attachment()); // NOLINT(misc-misplaced-const)
-	const ImTextureID shadow_tex_id = reinterpret_cast<void*>(shadow_fb.get_depth_attachment()); // NOLINT(misc-misplaced-const)
 	const ImTextureID bloom_color_tex_id = reinterpret_cast<void*>(bloom_fb.get_color_attachment(GL_COLOR_ATTACHMENT0)); // NOLINT(misc-misplaced-const)
 
 	const ImTextureID g_pos = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
@@ -1167,13 +1188,7 @@ void render_debug_windows()
 		ImGui::Image(depth_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
-
-	/*if(ImGui::TreeNode("Directional Shadow"))
-	{
-		ImGui::Image(shadow_tex_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
-		ImGui::TreePop();
-	}*/
-
+	
 	if(ImGui::TreeNode("Bloom FB Color"))
 	{
 		ImGui::Image(bloom_color_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));

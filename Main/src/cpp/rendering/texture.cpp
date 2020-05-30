@@ -320,7 +320,8 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
 		case texture_type::cube: return "cube";
-	default: return "error";
+		case texture_type::mask: return "mask";
+		default: return "error";
 	}
 }
 

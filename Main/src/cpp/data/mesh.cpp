@@ -1,5 +1,16 @@
 #include "data/mesh.h"
 
+bool check_if_transparent(std::vector<texture>& textures)
+{
+	for (auto && texture : textures)
+	{
+		if (texture.get_type() == texture_type::diffuse && texture.get_channels() == 4)
+			return true;
+	}
+
+	return false;
+}
+
 mesh::mesh(const std::vector<vertex>& v)
 {
 	vertices = v;
@@ -9,6 +20,8 @@ mesh::mesh(const std::vector<vertex>& v)
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
+
+	is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<texture>& t)
@@ -20,6 +33,7 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<texture>& t)
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
+	is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i)
@@ -31,6 +45,7 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i)
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
+	is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i, std::vector<texture>& t)
@@ -42,10 +57,12 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i, std::vector<t
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
+	is_transparent = check_if_transparent(textures);
 }
 
 void mesh::replace_textures(const std::vector<texture>& textures)
 {
 	this->textures.clear();
 	this->textures.insert(this->textures.begin(), textures.begin(), textures.end());
+	is_transparent = check_if_transparent(this->textures);
 }
