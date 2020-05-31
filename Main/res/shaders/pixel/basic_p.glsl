@@ -95,7 +95,6 @@ uniform float farPlane;
 uniform float useShadow;
 uniform float useNormalMaps;
 uniform float useParallax;
-uniform PointLight pointLights_p[4];
 
 void main()
 {
@@ -183,7 +182,6 @@ vec3 CalculateSpotLightContrib(SpotLight light)
 	vec3 fragToLight = normalize(light.lightPos - FragPosTangent);
 
 	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
-	vec3 reflectedLightDir = reflect(-fragToLight, normal);
 	vec3 halfwayDir = normalize(fragToLight + fragToView);
 
 	float diffuseStrength = max(dot(normal, fragToLight), 0);

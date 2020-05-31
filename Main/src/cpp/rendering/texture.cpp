@@ -1,8 +1,5 @@
 #include "rendering/texture.h"
 
-#include <iostream>
-
-#include "stb_image.h"
 
 texture::texture() = default;
 
@@ -48,8 +45,7 @@ texture::texture(const std::string& absolute_path, const texture_type type, cons
 		else if(channels == 4)
 		{
 			format = GL_RGBA;
-			internal_format = type == texture_type::diffuse ? GL_RGBA : GL_RGBA;
-			//internal_format = type == texture_type::diffuse ? GL_SRGB : GL_RGB;
+			internal_format = type == texture_type::diffuse ? GL_SRGB_ALPHA : GL_RGBA;
 		}
 
 		glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, format, data_format, data);
@@ -57,9 +53,60 @@ texture::texture(const std::string& absolute_path, const texture_type type, cons
 			glGenerateMipmap(GL_TEXTURE_2D);
 
 		
-		set_wrap_mode(channels == 3 ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+		set_wrap_mode(GL_REPEAT);
 		set_filter_mag(GL_LINEAR);
 		set_filter_min(GL_LINEAR_MIPMAP_LINEAR);
+	}
+	else
+	{
+		std::cout << "ERROR: FAILED TO LOAD TEXTURE" << std::endl;
+	}
+
+	stbi_image_free(data);
+}
+
+texture::texture(const std::string& absolute_path, const texture_type type, const GLenum format, const GLenum internal_format, const GLenum data_format, const bool generate_mipmaps)
+{
+	id = 0;
+
+	this->wrap_mode = GL_REPEAT;
+	this->filter_mag = GL_LINEAR;
+	this->filter_min = GL_LINEAR;
+
+	this->type = type;
+	is_multi_sampled = false;
+
+	glGenTextures(1, &id);
+
+	this->bind();
+
+	int temp_width;
+	int temp_height;
+	int temp_number_of_channels;
+
+	stbi_set_flip_vertically_on_load(true);
+
+	void* data;
+	if(type==texture_type::hdr)
+		data = stbi_loadf(absolute_path.c_str(), &temp_width, &temp_height, &temp_number_of_channels, 0);
+	else
+		data = stbi_load(absolute_path.c_str(), &temp_width, &temp_height, &temp_number_of_channels, 0);
+
+	if (data)
+	{
+		this->width = temp_width;
+		this->height = temp_height;
+		this->channels = temp_number_of_channels;
+
+		glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, format, data_format, data);
+		
+		if (generate_mipmaps)
+			glGenerateMipmap(GL_TEXTURE_2D);
+
+
+		set_wrap_mode(GL_REPEAT);
+		set_filter_mag(GL_LINEAR);
+		set_filter_min(GL_LINEAR);
 	}
 	else
 	{
@@ -200,7 +247,7 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 
 
 //used for cube_maps
-texture::texture(const std::string paths[], const texture_type type, const GLenum internal_format, const GLenum format, const GLenum data_format)
+texture::texture(const std::vector<std::string>& paths, const texture_type type, const GLenum internal_format, const GLenum format, const GLenum data_format)
 {
 	id = 0;
 	
@@ -213,28 +260,40 @@ texture::texture(const std::string paths[], const texture_type type, const GLenu
 
 	glGenTextures(1, &id);
 	bind();
-	//glBindTexture(GL_TEXTURE_CUBE_MAP, id);
 
 	int temp_width;
 	int temp_height;
 	int temp_number_of_channels;
+
+	const bool should_load = paths.size() == 6;
+	
 	stbi_set_flip_vertically_on_load(true);
 	for (int i = 0; i < 6; i++)
 	{
-		stbi_uc* data = stbi_load(paths[i].c_str(), &temp_width, &temp_height, &temp_number_of_channels, 0);
-		if(data)
+		if(should_load)
 		{
-			this->width = temp_width;
-			this->height = temp_height;
-			this->channels = temp_number_of_channels;
-			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, temp_width, temp_height, 0, format, data_format, data);
+			stbi_uc* data = stbi_load(paths[i].c_str(), &temp_width, &temp_height, &temp_number_of_channels, 0);
+			if (data)
+			{
+				this->width = temp_width;
+				this->height = temp_height;
+				this->channels = temp_number_of_channels;
+				glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, temp_width, temp_height, 0, format, data_format, data);
+			}
+			else
+			{
+				std::cout << "ERROR: FAILED TO LOAD TEXTURE" << std::endl;
+			}
+			stbi_image_free(data);
 		}
 		else
 		{
-			std::cout << "ERROR: FAILED TO LOAD TEXTURE" << std::endl;
+			this->width = config::WIDTH;
+			this->height = config::HEIGHT;
+			this->channels = 3;
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, width, height, 0, format, data_format, nullptr);
 		}
 
-		stbi_image_free(data);
 
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -320,7 +379,7 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
 		case texture_type::cube: return "cube";
-		case texture_type::mask: return "mask";
+		case texture_type::mask: return "maskTexture";
 		default: return "error";
 	}
 }

@@ -209,6 +209,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\pixel\light_debug_p.glsl" />
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
+    <None Include="res\shaders\pixel\pbr\pbr_forward_p.glsl" />
     <None Include="res\shaders\pixel\planet_p.glsl" />
     <None Include="res\shaders\pixel\point_shadow_p.glsl" />
     <None Include="res\shaders\pixel\screen_space_p.glsl" />
@@ -224,6 +225,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\vertex\ds_point_light_v.glsl" />
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
+    <None Include="res\shaders\vertex\pbr\pbr_forward_v.glsl" />
     <None Include="res\shaders\vertex\planet_v.glsl" />
     <None Include="res\shaders\vertex\point_shadow_v.glsl" />
     <None Include="res\shaders\vertex\screen_space_v.glsl" />

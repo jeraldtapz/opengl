@@ -21,7 +21,7 @@ mesh::mesh(const std::vector<vertex>& v)
 	cull_face = GL_BACK;
 	should_cull_face = true;
 
-	is_transparent = check_if_transparent(textures);
+	//is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<texture>& t)
@@ -33,7 +33,7 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<texture>& t)
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
-	is_transparent = check_if_transparent(textures);
+	//is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i)
@@ -45,7 +45,7 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i)
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
-	is_transparent = check_if_transparent(textures);
+	//is_transparent = check_if_transparent(textures);
 }
 
 mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i, std::vector<texture>& t)
@@ -57,12 +57,19 @@ mesh::mesh(const std::vector<vertex>& v, std::vector<unsigned>& i, std::vector<t
 	is_indexed = false;
 	cull_face = GL_BACK;
 	should_cull_face = true;
-	is_transparent = check_if_transparent(textures);
+	//is_transparent = check_if_transparent(textures);
 }
 
 void mesh::replace_textures(const std::vector<texture>& textures)
 {
 	this->textures.clear();
 	this->textures.insert(this->textures.begin(), textures.begin(), textures.end());
-	is_transparent = check_if_transparent(this->textures);
+	//is_transparent = check_if_transparent(this->textures);
 }
+
+void mesh::insert_texture(const texture& texture)
+{
+	this->textures.push_back(texture);
+	//is_transparent = check_if_transparent(this->textures);
+}
+

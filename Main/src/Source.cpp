@@ -93,8 +93,8 @@ void render_debug_windows();
 
 const unsigned int ASTEROID_COUNT = 1000;
 const unsigned int SHADOW_RESOLUTION = 2048;
-const unsigned int WIDTH = 1280;
-const unsigned int HEIGHT = 720;
+const unsigned int WIDTH = 1600;
+const unsigned int HEIGHT = 900;
 const unsigned int SAMPLES = 8;
 const float RADIUS = 25.0f;
 
@@ -126,9 +126,10 @@ bool use_normal_maps = true;
 bool use_parallax = false;
 bool use_gamma_correction = true;
 bool use_hdr = true;
-bool use_bloom = true;
+bool use_bloom = false;
 bool use_deferred = false;
 bool use_light_debug = false;
+bool use_pbr = false;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -160,6 +161,7 @@ FB debug_fb = FB();
 FB pingpong_fb[] = { FB(), FB() };
 FB geometry_fb = FB();
 FB ds_light_fb = FB();
+FB hdr_to_cube_fb = FB();
 
 uniform_buffer_object vp_ubo;
 
@@ -230,10 +232,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 	#pragma region Data
 
 	glm::vec3 point_light_positions[] = {
-		glm::vec3(9.0f,  4.5f,  -8.0f),
-		glm::vec3(9.3f,  3.3f,  4.0f),
-		glm::vec3(-4.0f,  2.0f, 4.8f),
-		glm::vec3(-12.0f,  1.0f, -11.2f)
+		glm::vec3(4.0f,  7.0f,  -4.0f),
+		glm::vec3(4.0f,  7.0f,  4.0f),
+		glm::vec3(-4.0f,  7.0f, -4.0f),
+		glm::vec3(-4.0f,  7.0f, 4.0f)
 	};
 
 #pragma endregion
@@ -293,6 +295,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader point_light_debug_vertex = shader("ds_point_light_v", GL_VERTEX_SHADER);
 	shader point_light_debug_pixel = shader("light_debug_p", GL_FRAGMENT_SHADER);
 
+
+	shader pbr_forward_vertex = shader("pbr/pbr_forward_v", GL_VERTEX_SHADER);
+	shader pbr_forward_pixel = shader("pbr/pbr_forward_P", GL_FRAGMENT_SHADER);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -315,6 +321,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader_program ds_point_light_shader_program = shader_program(&ds_point_light_vertex, &ds_point_light_pixel);
 	shader_program ds_point_light_stcl_shader_program = shader_program(&ds_point_light_stcl_vertex, &ds_point_light_stcl_pixel);
 	shader_program debug_light_shader_program = shader_program(&point_light_debug_vertex, &point_light_debug_pixel);
+
+	shader_program pbr_forward_shader_program = shader_program(&pbr_forward_vertex, &pbr_forward_pixel);
 	
 	#pragma endregion
 
@@ -325,14 +333,19 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma region Loaded Textures
 	
-	const texture floor_tex = texture(get_tex("floor/bricks_col.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
-	const texture floor_normal_tex = texture(get_tex("floor/bricks_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
-	const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), TEX_T::height, GL_UNSIGNED_BYTE, true);
-	const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
+	const texture floor_tex = texture(get_tex("pavement/pavement_color.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
+	const texture floor_normal_tex = texture(get_tex("pavement/pavement_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
+	const texture floor_mask_tex = texture(get_tex("pavement/pavement_mask.jpg"), TEX_T::mask, GL_UNSIGNED_BYTE, true);
+	//const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), TEX_T::height, GL_UNSIGNED_BYTE, true);
+	//const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
 
-	const texture steampunk_glasses_mask_tex = texture("res/models/steampunk_glasses/textures/DefaultMaterial_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
+	const texture canon_lens_mask_tex = texture("res/models/len_canon/textures/len_low_lambert2SG_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
-	std::string skybox_texture_paths[] = {
+	const texture viking_shield_mask_tex = texture("res/models/viking_shield/textures/lambert1_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
+
+	texture signal_hill_hdr = texture(get_tex("hdr/signal_hill_sunrise_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+
+	std::vector<std::string> skybox_texture_paths = {
 		"res/textures/skybox_2/px.jpg",
 		"res/textures/skybox_2/nx.jpg" ,
 		"res/textures/skybox_2/ny.jpg",
@@ -341,6 +354,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 		"res/textures/skybox_2/nz.jpg"
 	};
 	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE); // textures
+
+	texture signal_hill_cubemap = texture(std::vector<std::string>(), TEX_T::cube, GL_RGB, GL_RGB16F, GL_FLOAT);
 
 	#pragma endregion
 
@@ -391,7 +406,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	skybox_cube_mesh.should_cull_face = false;
 	
 
-	std::vector<texture> floor_textures = { floor_tex, floor_spec_tex, floor_normal_tex , floor_height_tex };
+	std::vector<texture> floor_textures = { floor_tex, floor_mask_tex, floor_normal_tex };
 	mesh floor_mesh = primitive::get_quad();
 	floor_mesh.replace_textures(floor_textures);
 	floor_mesh.is_indexed = false;
@@ -429,17 +444,13 @@ int main()  // NOLINT(bugprone-exception-escape)
 	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
 	renderer floor_renderer = renderer(std::make_shared<mesh>(floor_mesh)); //Renderers
 
-	model barrel_model = model("res/models/barrel/scene.gltf", true);
-	barrel_model.set_name("Barrel");
-
-	model pistol_model = model("res/models/pistol/scene.gltf", true);
-	pistol_model.set_name("Pistol");
-
-	model steampunk_glasses = model("res/models/steampunk_glasses/scene.gltf", true);
-	steampunk_glasses.set_name("Steampunk Glasses");
-
+	model viking_shield = model("res/models/viking_shield/scene.gltf", true);
+	viking_shield.set_name("Viking Shield");
+	viking_shield.get_mesh_ptr(0)->insert_texture(viking_shield_mask_tex);
+	
 	model canon_lens = model("res/models/len_canon/scene.gltf", true);
 	canon_lens.set_name("Canon Lens");
+	canon_lens.get_mesh_ptr(0)->insert_texture(canon_lens_mask_tex);
 
 	model light_rep_model = model({ primitive::get_sphere() });
 	//model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
@@ -481,16 +492,28 @@ int main()  // NOLINT(bugprone-exception-escape)
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
 	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
-	//game_models.push_back(barrel_model);
 	//game_models.push_back(pistol_model);
 	game_models.push_back(floor_model);
 	game_models.push_back(canon_lens);
+	game_models.push_back(viking_shield);
 	//game_models.push_back(steampunk_glasses);
 
 	#pragma endregion
 
 	#pragma region FrameBuffers and RenderBuffers and Uniform Buffer Objects
 
+	hdr_to_cube_fb.generate();
+	hdr_to_cube_fb.bind();
+
+	
+	//hdr_to_cube_fb.attach_texture(signal_hill_cubemap, GL_COLOR_ATTACHMENT0);
+
+	render_buffer hdr_to_cube_rb = render_buffer(GL_DEPTH_COMPONENT24, WIDTH, HEIGHT);
+	hdr_to_cube_fb.attach_render_buffer(hdr_to_cube_rb, GL_DEPTH_ATTACHMENT);
+
+	std::cout << "HDR to Cube Map Frame Buffer " << FB::validate() << std::endl;
+	FB::unbind();
+	
 	geometry_fb.generate();
 	geometry_fb.bind();
 	geometry_fb.attach_texture_2d_color(geometry_pos_tex, GL_COLOR_ATTACHMENT0);
@@ -615,7 +638,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	dir_light = directional_light();
 	dir_light.set_name("directional_light");
 	dir_light.get_transform()->set_position(glm::vec3(0, 1, 4));
-	dir_light.diff_intensity = 2.5f;
+	dir_light.diff_intensity = 10.0f;
 	game_objects.push_back(&dir_light);
 	lights.push_back(&dir_light);
 	dir_shadow_map_mvp_matrix.projection = glm::ortho(-200.0f, 200.0f, -200.0f, 200.0f, 1.0f, 200.f);
@@ -627,7 +650,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 		point_lights[i].linear = 0.0f;
 		point_lights[i].set_uniform_scale();
 		point_lights[i].set_radius_from_scale();
-		point_lights[i].diff_intensity = 10.0f;
+		point_lights[i].diff_intensity = 150.0f;
 		point_lights[i].set_name(std::string("point_light_").append(std::to_string(i)));
 		game_objects.push_back(&point_lights[i]);
 		lights.push_back(&point_lights[i]);
@@ -635,21 +658,13 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	spotlight = spot_light();
 	spotlight.diffuse = color(250 / 255.0f, 1.0f, 107 / 255.0f, 1.0f);
-	spotlight.diff_intensity = 2.0f;
 	spotlight.diffuse = color(250 / 255.0f, 1.0f, 107 / 255.0f, 1.0f);
-	spotlight.diff_intensity = 1.0f;
+	spotlight.diff_intensity = 50.0f;
 	
 	spotlight.set_name("spot_light");
 	lights.push_back(&spotlight);
 	game_objects.push_back(&spotlight);
 	
-
-	barrel_model.get_transform()->set_position(glm::vec3(0, 0, 1));
-	barrel_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
-	barrel_model.get_transform()->set_scale(glm::vec3(0.025f));
-
-	pistol_model.get_transform()->set_position(glm::vec3(2, 1.0f, 0));
-	pistol_model.get_transform()->set_scale(glm::vec3(0.025f));
 
 	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 	floor_model.get_transform()->set_scale(glm::vec3(15, 15, 1));
@@ -658,9 +673,11 @@ int main()  // NOLINT(bugprone-exception-escape)
 	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
 	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
 
-	steampunk_glasses.get_transform()->set_position(glm::vec3(0, 5, 0));
-
 	canon_lens.get_transform()->set_position(glm::vec3(3, 5, 0));
+
+	viking_shield.get_transform()->set_position(glm::vec3(4, 2, 4));
+	viking_shield.get_transform()->set_rotation(glm::vec3(90, 0, 0));
+	viking_shield.get_transform()->set_scale(glm::vec3(0.1f));
 
 	#pragma endregion
 
@@ -693,21 +710,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 		}
 		else
 		{
-			/*if (use_hdr)
-				hdr_fb.bind();
-			else
-				ms_fb.bind();
-
-			FB::clear_frame();
-
-			render_model(barrel_model, tiling_and_offset(), basic_shader_program);
-			render_model(floor_model, floor_tiling_and_offset, basic_shader_program);
-			render_model(pistol_model, tiling_and_offset(), basic_shader_program);*/
-
-			render_forward(basic_shader_program);
+			render_forward(use_pbr ? pbr_forward_shader_program : basic_shader_program);
 			render_skybox(skybox_renderer, skybox_shader_program);
 			render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
-			
 		}
 
 		//blit to bloom buffer
@@ -749,7 +754,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	destroy_imgui();
 	glfwTerminate();
 	
-	#pragma endregion 
+	#pragma endregion
 }
 
 #pragma region Render Functions
@@ -965,7 +970,10 @@ void render_forward(const shader_program& program)
 		tiling_and_offset t;
 
 		if (model_name == "Floor")
-			t = tiling_and_offset{ glm::vec2(15,15), glm::vec2(0) };
+		{
+			t.tiling = glm::vec2(4, 4);
+			t.offset = glm::vec2(0);
+		}
 		else
 			t = tiling_and_offset();
 
@@ -1156,7 +1164,7 @@ void render_debug_windows()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	ImGui::ShowDemoWindow(&is_open);
+	//ImGui::ShowDemoWindow(&is_open);
 
 	ImGui::Begin("Debug Textures");
 
@@ -1244,12 +1252,13 @@ void render_debug_windows()
 	ImGui::Checkbox("Use Bloom", &use_bloom);
 	ImGui::Checkbox("Use Deferred", &use_deferred);
 	ImGui::Checkbox("Use Light Debug", &use_light_debug);
+	ImGui::Checkbox("Use PBR", &use_pbr);
 	
 
 	ImGui::Spacing();
 
 	ImGui::SliderFloat("HDR Exposure", &hdr_exposure, 0, 10, "%.3f", 1.0f);
-	ImGui::SliderFloat("Brightness Threshold", &brightness_threshold, 1, 5, "%.3f", 1.0f);
+	ImGui::SliderFloat("Brightness Threshold", &brightness_threshold, 1, 100, "%.3f", 1.0f);
 	
 	ImGui::Spacing();
 	
