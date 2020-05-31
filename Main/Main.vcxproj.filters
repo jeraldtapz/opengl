@@ -172,6 +172,8 @@
     <None Include="res\shaders\pixel\light_debug_p.glsl" />
     <None Include="res\shaders\vertex\pbr\pbr_forward_v.glsl" />
     <None Include="res\shaders\pixel\pbr\pbr_forward_p.glsl" />
+    <None Include="res\shaders\vertex\pbr\equirectangular_to_cube_v.glsl" />
+    <None Include="res\shaders\pixel\pbr\equirectangular_to_cube_p.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">

@@ -291,9 +291,8 @@ texture::texture(const std::vector<std::string>& paths, const texture_type type,
 			this->width = config::WIDTH;
 			this->height = config::HEIGHT;
 			this->channels = 3;
-			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, width, height, 0, format, data_format, nullptr);
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, 1024, 1024, 0, format, data_format, nullptr);
 		}
-
 
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

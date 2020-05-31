@@ -9,8 +9,8 @@
 class config
 {
 public:
-	static const int WIDTH{ 1280 };
-	static const int HEIGHT{ 720 };
+	static const int WIDTH{ 1600 };
+	static const int HEIGHT{ 900 };
 	static const std::string WINDOW_NAME;
 	static const color CLEAR_COLOR;
 	static const std::string VERTEX_SHADER_DEFAULT;

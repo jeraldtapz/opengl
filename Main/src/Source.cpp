@@ -168,18 +168,53 @@ uniform_buffer_object vp_ubo;
 float values[9] = { 1.0f,1.0f,1.0f,1.0f, -9.0f, 1.0f, 1.0f, 1.0f, 1.0f };
 kernel3 kernel = kernel3(values, 0.0033f);
 
+#pragma region Data
+
+glm::vec3 capture_forward_directions[] =
+{
+	glm::vec3(1.0f,  0.0f,  0.0f),
+	glm::vec3(-1.0f,  0.0f,  0.0f),
+	glm::vec3(0.0f,  1.0f,  0.0f),
+	glm::vec3(0.0f, -1.0f,  0.0f),
+	glm::vec3(0.0f,  0.0f,  1.0f),
+	glm::vec3(0.0f,  0.0f, -1.0f)
+};
+
+glm::vec3 capture_up_directions[] =
+{
+	glm::vec3(0.0f, -1.0f,  0.0f),
+	glm::vec3(0.0f, -1.0f,  0.0f),
+	glm::vec3(0.0f,  0.0f,  1.0f),
+	glm::vec3(0.0f,  0.0f, -1.0f),
+	glm::vec3(0.0f, -1.0f,  0.0f),
+	glm::vec3(0.0f, -1.0f,  0.0f)
+};
+
+glm::mat4 origin_capture_views[] =
+{
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[0], capture_up_directions[0]),
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[1], capture_up_directions[1]),
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[2], capture_up_directions[2]),
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[3], capture_up_directions[3]),
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[4], capture_up_directions[4]),
+   glm::lookAt(glm::vec3(0.0f), capture_forward_directions[5], capture_up_directions[5])
+};
+
+
+#pragma endregion
+
 #pragma endregion 
 
 int main()  // NOLINT(bugprone-exception-escape)
 {
-	
+
 	#pragma region Init GLFW
-	
+
 	glfwSetErrorCallback(glfw_error_callback);
-	
+
 	const int init_result = glfwInit();
 
-	if(!init_result)
+	if (!init_result)
 		return 1;
 
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -187,50 +222,51 @@ int main()  // NOLINT(bugprone-exception-escape)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Main", nullptr, nullptr);
 
-	if(!window)
+	if (!window)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
 		return -1;
 	}
-	
-	
+
+
 	glfwMakeContextCurrent(window);
 
 	#pragma endregion
 
 	#pragma region GLAD Load
-	
-	if(!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
+
+	if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
 	{
 		std::cout << "Failed to initialize GLAD" << std::endl;
 		return -1;
 	}
 
-#pragma endregion
+	#pragma endregion
 
 	#pragma region Viewport and Callbacks
-	
+
 	glViewport(0, 0, WIDTH, HEIGHT);
 	glfwSetFramebufferSizeCallback(window, frame_buffer_resize_callback);
 
 	glfwSwapInterval(0);
-	
+
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	glfwSetCursorPosCallback(window, mouse_callback);
 
 	glfwSetScrollCallback(window, scroll_callback);
-	
+
 	#pragma endregion
 
 	#pragma region ImGui Init
 
 	init_imgui();
-	
+
 	#pragma endregion
 
 	#pragma region Data
 
+	
 	glm::vec3 point_light_positions[] = {
 		glm::vec3(4.0f,  7.0f,  -4.0f),
 		glm::vec3(4.0f,  7.0f,  4.0f),
@@ -238,7 +274,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 		glm::vec3(-4.0f,  7.0f, 4.0f)
 	};
 
-#pragma endregion
+	#pragma endregion
 
 	#pragma region Shaders
 
@@ -299,6 +335,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader pbr_forward_vertex = shader("pbr/pbr_forward_v", GL_VERTEX_SHADER);
 	shader pbr_forward_pixel = shader("pbr/pbr_forward_P", GL_FRAGMENT_SHADER);
 
+	shader eq_to_cube_vertex = shader("pbr/equirectangular_to_cube_v", GL_VERTEX_SHADER);
+	shader eq_to_cube_pixel = shader("pbr/equirectangular_to_cube_p", GL_FRAGMENT_SHADER);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -323,7 +362,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader_program debug_light_shader_program = shader_program(&point_light_debug_vertex, &point_light_debug_pixel);
 
 	shader_program pbr_forward_shader_program = shader_program(&pbr_forward_vertex, &pbr_forward_pixel);
-	
+	shader_program eq_to_cube_shader_program = shader_program(&eq_to_cube_vertex, &eq_to_cube_pixel);
 	#pragma endregion
 
 	#pragma region Colors, Textures, Materials & Meshes
@@ -355,7 +394,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	};
 	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE); // textures
 
-	texture signal_hill_cubemap = texture(std::vector<std::string>(), TEX_T::cube, GL_RGB, GL_RGB16F, GL_FLOAT);
+	texture signal_hill_cubemap = texture(std::vector<std::string>(), TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT);
 
 	#pragma endregion
 
@@ -399,7 +438,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	
 	#pragma region Meshes
 	
-	std::vector<texture> skybox_textures = { skybox_tex };
+	std::vector<texture> skybox_textures = { signal_hill_cubemap };
 	mesh skybox_cube_mesh = primitive::get_cube();
 	skybox_cube_mesh.replace_textures(skybox_textures);
 	skybox_cube_mesh.is_indexed = false;
@@ -432,7 +471,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 	ds_point_light_sphere_mesh.is_transparent = true;
 	ds_point_light_sphere_mesh.should_cull_face = true;
 	ds_point_light_sphere_mesh.cull_face = GL_FRONT;
-	
+
+	mesh debug_eq_to_cube_mesh = primitive::get_cube();
+	debug_eq_to_cube_mesh.is_indexed = false;
 	#pragma endregion
 	
 	#pragma endregion
@@ -492,6 +533,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
 	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
+	model debug_eq_to_cube_model = model({ debug_eq_to_cube_mesh });
+	debug_eq_to_cube_model.set_name("Debug Cube");
+
 	//game_models.push_back(pistol_model);
 	game_models.push_back(floor_model);
 	game_models.push_back(canon_lens);
@@ -504,11 +548,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	hdr_to_cube_fb.generate();
 	hdr_to_cube_fb.bind();
-
 	
-	//hdr_to_cube_fb.attach_texture(signal_hill_cubemap, GL_COLOR_ATTACHMENT0);
-
-	render_buffer hdr_to_cube_rb = render_buffer(GL_DEPTH_COMPONENT24, WIDTH, HEIGHT);
+	render_buffer hdr_to_cube_rb = render_buffer(GL_DEPTH_COMPONENT24, 1024, 1024);
 	hdr_to_cube_fb.attach_render_buffer(hdr_to_cube_rb, GL_DEPTH_ATTACHMENT);
 
 	std::cout << "HDR to Cube Map Frame Buffer " << FB::validate() << std::endl;
@@ -679,6 +720,36 @@ int main()  // NOLINT(bugprone-exception-escape)
 	viking_shield.get_transform()->set_rotation(glm::vec3(90, 0, 0));
 	viking_shield.get_transform()->set_scale(glm::vec3(0.1f));
 
+	#pragma endregion
+
+	#pragma region HDR
+	glm::mat4 capture_proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+	glViewport(0, 0, 1024, 1024);
+
+	hdr_to_cube_fb.bind();
+
+	
+	eq_to_cube_shader_program.use();
+	eq_to_cube_shader_program.set_int("equirectangularMap", 0);
+	eq_to_cube_shader_program.set_proj(capture_proj);
+
+	texture::activate(GL_TEXTURE0);
+	signal_hill_hdr.bind();
+	
+	for(int i = 0; i < 6; i++)
+	{
+		eq_to_cube_shader_program.set_view(origin_capture_views[i]);
+		hdr_to_cube_fb.attach_texture_2d_color(signal_hill_cubemap, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i);
+
+		std::cout << "Attaching cube face " << i << " " << FB::validate() << std::endl;
+		FB::clear_color_buffer();
+		FB::clear_depth_buffer();
+
+		debug_eq_to_cube_model.draw(eq_to_cube_shader_program);
+	}
+
+	FB::unbind();
+	glViewport(0, 0, WIDTH, HEIGHT);
 	#pragma endregion
 
 	#pragma region Loop
@@ -996,7 +1067,6 @@ void render_shadow_maps(std::vector<model>& models, const shader_program& dir_pr
 	}
 }
 
-
 void render_directional_shadow_map(std::vector<model>& models, const shader_program& program)
 {
 	glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
@@ -1038,12 +1108,12 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 
 	const glm::vec3 pos = point_lights[0].get_transform()->position();
 	std::vector<glm::mat4> shadow_view_matrices;
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(-1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 1.0)));
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, -1.0, 0.0), glm::vec3(0.0, 0.0, -1.0)));
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, -1.0, 0.0)));
-	shadow_view_matrices.push_back(glm::lookAt(pos, pos + glm::vec3(0.0, 0.0, -1.0), glm::vec3(0.0, -1.0, 0.0)));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[0], capture_up_directions[0]));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[1], capture_up_directions[1]));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[2], capture_up_directions[2]));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[3], capture_up_directions[3]));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[4], capture_up_directions[4]));
+	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[5], capture_up_directions[5]));
 
 	program.use();
 	program.set_float("farPlane",RADIUS);
