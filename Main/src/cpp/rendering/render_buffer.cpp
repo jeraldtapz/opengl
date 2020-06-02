@@ -14,6 +14,16 @@ render_buffer::render_buffer(const GLenum internal_format, const unsigned int wi
 	unbind();
 }
 
+void render_buffer::reallocate(const GLenum internal_format, const unsigned int width, const unsigned int height)
+{
+	bind();
+	this->width = width;
+	this->height = height;
+	glRenderbufferStorage(GL_RENDERBUFFER, internal_format, width, height);
+	unbind();
+}
+
+
 void render_buffer::bind() const
 {
 	glBindRenderbuffer(GL_RENDERBUFFER, id);

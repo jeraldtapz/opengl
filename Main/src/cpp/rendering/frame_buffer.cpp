@@ -25,14 +25,14 @@ void frame_buffer::attach_texture_2d_color(texture& tex, const GLenum attachment
 	color_attachments.insert(std::pair<GLenum, texture*>(attachment, &tex));
 }
 
-void frame_buffer::attach_texture_2d_color(texture& tex, const GLenum attachment, const GLenum target)
+void frame_buffer::attach_texture_2d_color(texture& tex, const GLenum attachment, const GLenum target, const int mip_level)
 {
 	if (attachment == GL_DEPTH_ATTACHMENT || attachment == GL_STENCIL_ATTACHMENT || attachment == GL_DEPTH_STENCIL_ATTACHMENT)
 	{
 		std::cout << "Texture color attachment failed" << std::endl;
 		return;
 	}
-	glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, target, tex.get_id(), 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, target, tex.get_id(), mip_level);
 
 	color_attachments.insert(std::pair<GLenum, texture*>(attachment, &tex));
 }
@@ -239,7 +239,6 @@ void frame_buffer::bind_read() const
 
 void frame_buffer::clear_color_buffer()
 {
-	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 

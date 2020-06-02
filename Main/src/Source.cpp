@@ -43,6 +43,8 @@
 
 #pragma region function declarations
 
+static void renderCube();
+
 void set_vp_from_camera();
 std::string get_tex(const std::string& path);
 
@@ -77,11 +79,11 @@ void deallocate();
 void init_imgui();
 void destroy_imgui();
 
-void glfw_error_callback(int error, const char* description);
-void frame_buffer_resize_callback(GLFWwindow*, int, int);
-void process_input(GLFWwindow* window);
-void mouse_callback(GLFWwindow* window, double x_pos, double y_pos);
-void scroll_callback(GLFWwindow* window, double x_offset, double y_offset);
+static void glfw_error_callback(int error, const char* description);
+static void frame_buffer_resize_callback(GLFWwindow*, int, int);
+static void process_input(GLFWwindow* window);
+static void mouse_callback(GLFWwindow* window, double x_pos, double y_pos);
+static void scroll_callback(GLFWwindow* window, double x_offset, double y_offset);
 
 void render_debug_windows();
 
@@ -91,12 +93,15 @@ void render_debug_windows();
 
 #pragma region CONSTANTS
 
-const unsigned int ASTEROID_COUNT = 1000;
-const unsigned int SHADOW_RESOLUTION = 2048;
-const unsigned int WIDTH = 1600;
-const unsigned int HEIGHT = 900;
-const unsigned int SAMPLES = 8;
-const float RADIUS = 25.0f;
+static const unsigned int ASTEROID_COUNT = 1000;
+static const unsigned int SHADOW_RESOLUTION = 2048;
+static const unsigned int ENV_MAP_RES = 512;
+static const unsigned int IRRADIANCE_RES = 32;
+static const unsigned int PREFILTER_RES = 128;
+static const unsigned int WIDTH = 1280;
+static const unsigned int HEIGHT = 720;
+static const unsigned int SAMPLES = 8;
+static const float RADIUS = 25.0f;
 
 #pragma endregion
 
@@ -116,6 +121,7 @@ float last_flash_light_swap = 0.0f;
 
 float hdr_exposure = 1.0f;
 float brightness_threshold = 2.0f;
+float skybox_lod = 0;
 
 int cursor_mode = GLFW_CURSOR_NORMAL;
 bool first_mouse;
@@ -130,6 +136,7 @@ bool use_bloom = false;
 bool use_deferred = false;
 bool use_light_debug = false;
 bool use_pbr = false;
+bool use_ibl = true;
 
 color ambient_color;
 std::map<float, transform> sorted;
@@ -161,7 +168,8 @@ FB debug_fb = FB();
 FB pingpong_fb[] = { FB(), FB() };
 FB geometry_fb = FB();
 FB ds_light_fb = FB();
-FB hdr_to_cube_fb = FB();
+FB precompute_fb = FB();
+//FB conv_fb = FB();
 
 uniform_buffer_object vp_ubo;
 
@@ -207,7 +215,6 @@ glm::mat4 origin_capture_views[] =
 
 int main()  // NOLINT(bugprone-exception-escape)
 {
-
 	#pragma region Init GLFW
 
 	glfwSetErrorCallback(glfw_error_callback);
@@ -338,6 +345,18 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader eq_to_cube_vertex = shader("pbr/equirectangular_to_cube_v", GL_VERTEX_SHADER);
 	shader eq_to_cube_pixel = shader("pbr/equirectangular_to_cube_p", GL_FRAGMENT_SHADER);
 
+	shader irradiance_vertex = shader("pbr/irradiance_v", GL_VERTEX_SHADER);
+	shader irradiance_pixel = shader("pbr/irradiance_2_p", GL_FRAGMENT_SHADER);
+
+	shader prefilter_vertex = shader("pbr/prefilter_v", GL_VERTEX_SHADER);
+	//shader prefilter_vertex = shader("src/testing/2.2.1.cubemap.vs", GL_VERTEX_SHADER, false);
+	shader prefilter_pixel = shader("pbr/prefilter_p", GL_FRAGMENT_SHADER);
+	//shader prefilter_pixel = shader("src/testing/2.2.1.prefilter.fs", GL_FRAGMENT_SHADER, false);
+
+	shader bg_vertex = shader("src/testing/2.2.1.background.vs", GL_VERTEX_SHADER, false);
+	shader bg_pixel = shader("src/testing/2.2.1.background.fs", GL_FRAGMENT_SHADER, false);
+	shader_program bg = shader_program(&bg_vertex, &bg_pixel);
+
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
 	shader_program basic_shader_program_2 = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -363,10 +382,15 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	shader_program pbr_forward_shader_program = shader_program(&pbr_forward_vertex, &pbr_forward_pixel);
 	shader_program eq_to_cube_shader_program = shader_program(&eq_to_cube_vertex, &eq_to_cube_pixel);
+	shader_program irradiance_diffuse_shader_program = shader_program(&irradiance_vertex, &irradiance_pixel);
+	shader_program prefilter_shader_program = shader_program(&prefilter_vertex, &prefilter_pixel);
+	
 	#pragma endregion
 
 	#pragma region Colors, Textures, Materials & Meshes
 
+	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+	
 	ambient_color = color(0.0f, 0.0f, 0.0f, 1.0f);
 	cube_mat = material(color::WHITE, color::WHITE);
 
@@ -375,26 +399,41 @@ int main()  // NOLINT(bugprone-exception-escape)
 	const texture floor_tex = texture(get_tex("pavement/pavement_color.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
 	const texture floor_normal_tex = texture(get_tex("pavement/pavement_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
 	const texture floor_mask_tex = texture(get_tex("pavement/pavement_mask.jpg"), TEX_T::mask, GL_UNSIGNED_BYTE, true);
-	//const texture floor_height_tex = texture(get_tex("floor/bricks_displacement.jpg"), TEX_T::height, GL_UNSIGNED_BYTE, true);
-	//const texture floor_spec_tex = texture(get_tex("floor/bricks_rough.jpg"), TEX_T::specular, GL_UNSIGNED_BYTE, true);
 
 	const texture canon_lens_mask_tex = texture("res/models/len_canon/textures/len_low_lambert2SG_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
 	const texture viking_shield_mask_tex = texture("res/models/viking_shield/textures/lambert1_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
-	texture signal_hill_hdr = texture(get_tex("hdr/signal_hill_sunrise_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	texture hdri_map = texture(get_tex("hdr/ballroom_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
 
 	std::vector<std::string> skybox_texture_paths = {
-		"res/textures/skybox_2/px.jpg",
-		"res/textures/skybox_2/nx.jpg" ,
-		"res/textures/skybox_2/ny.jpg",
-		"res/textures/skybox_2/py.jpg",
-		"res/textures/skybox_2/pz.jpg",
-		"res/textures/skybox_2/nz.jpg"
+		"res/textures/skybox_lowres/px.png",
+		"res/textures/skybox_lowres/nx.png" ,
+		"res/textures/skybox_lowres/ny.png",
+		"res/textures/skybox_lowres/py.png",
+		"res/textures/skybox_lowres/pz.png",
+		"res/textures/skybox_lowres/nz.png"
 	};
-	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE); // textures
+	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2048, false, GL_LINEAR); // textures
 
-	texture signal_hill_cubemap = texture(std::vector<std::string>(), TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT);
+	texture hdri_cube_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, ENV_MAP_RES, false , GL_LINEAR_MIPMAP_LINEAR);
+	texture irradiance_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, IRRADIANCE_RES, false, GL_LINEAR);
+	texture prefilter_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, PREFILTER_RES, true, GL_LINEAR_MIPMAP_LINEAR);
+
+	unsigned int prefilterMap;
+	glGenTextures(1, &prefilterMap);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
+	for (unsigned int i = 0; i < 6; ++i)
+	{
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, 128, 128, 0, GL_RGB, GL_FLOAT, nullptr);
+	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // be sure to set minifcation filter to mip_linear 
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	// generate mipmaps for the cubemap so OpenGL automatically allocates the required memory.
+	glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
 	#pragma endregion
 
@@ -438,14 +477,14 @@ int main()  // NOLINT(bugprone-exception-escape)
 	
 	#pragma region Meshes
 	
-	std::vector<texture> skybox_textures = { signal_hill_cubemap };
+	std::vector<texture> skybox_textures = { prefilter_map };
 	mesh skybox_cube_mesh = primitive::get_cube();
 	skybox_cube_mesh.replace_textures(skybox_textures);
 	skybox_cube_mesh.is_indexed = false;
 	skybox_cube_mesh.should_cull_face = false;
 	
 
-	std::vector<texture> floor_textures = { floor_tex, floor_mask_tex, floor_normal_tex };
+	std::vector<texture> floor_textures = { floor_tex, floor_mask_tex, floor_normal_tex , irradiance_map};
 	mesh floor_mesh = primitive::get_quad();
 	floor_mesh.replace_textures(floor_textures);
 	floor_mesh.is_indexed = false;
@@ -487,11 +526,25 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	model viking_shield = model("res/models/viking_shield/scene.gltf", true);
 	viking_shield.set_name("Viking Shield");
-	viking_shield.get_mesh_ptr(0)->insert_texture(viking_shield_mask_tex);
+
+	mesh* vk = viking_shield.get_mesh_ptr(0);
+	if(vk)
+	{
+		vk->insert_texture(viking_shield_mask_tex);
+		vk->insert_texture(irradiance_map);
+	}
+	
 	
 	model canon_lens = model("res/models/len_canon/scene.gltf", true);
 	canon_lens.set_name("Canon Lens");
-	canon_lens.get_mesh_ptr(0)->insert_texture(canon_lens_mask_tex);
+
+	mesh* cl = canon_lens.get_mesh_ptr(0);
+	if(cl)
+	{
+		cl->insert_texture(canon_lens_mask_tex);
+		cl->insert_texture(irradiance_map);
+	}
+	
 
 	model light_rep_model = model({ primitive::get_sphere() });
 	//model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
@@ -530,6 +583,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	std::vector<mesh> floor_meshes = { floor_mesh };
 	model floor_model = model(floor_meshes); //generated models
 	floor_model.set_name("Floor");
+	
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
 	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
@@ -546,14 +600,23 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma region FrameBuffers and RenderBuffers and Uniform Buffer Objects
 
-	hdr_to_cube_fb.generate();
-	hdr_to_cube_fb.bind();
+	precompute_fb.generate();
+	precompute_fb.bind();
 	
-	render_buffer hdr_to_cube_rb = render_buffer(GL_DEPTH_COMPONENT24, 1024, 1024);
-	hdr_to_cube_fb.attach_render_buffer(hdr_to_cube_rb, GL_DEPTH_ATTACHMENT);
+	render_buffer precompute_rb = render_buffer(GL_DEPTH_COMPONENT24, ENV_MAP_RES, ENV_MAP_RES);
+	precompute_fb.attach_render_buffer(precompute_rb, GL_DEPTH_ATTACHMENT);
 
 	std::cout << "HDR to Cube Map Frame Buffer " << FB::validate() << std::endl;
 	FB::unbind();
+
+	/*conv_fb.generate();
+	conv_fb.bind();
+
+	render_buffer conv_rb = render_buffer(GL_DEPTH_COMPONENT24, IBL_MAP_RES, IBL_MAP_RES);
+	conv_fb.attach_render_buffer(conv_rb, GL_DEPTH_ATTACHMENT);
+
+	std::cout << "Convolution Frame Buffer " << FB::validate() << std::endl;
+	FB::unbind();*/
 	
 	geometry_fb.generate();
 	geometry_fb.bind();
@@ -722,37 +785,108 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma endregion
 
-	#pragma region HDR
+	#pragma region Environment Map Precompute
+
 	glm::mat4 capture_proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-	glViewport(0, 0, 1024, 1024);
-
-	hdr_to_cube_fb.bind();
-
+	precompute_fb.bind();
+	
+	glViewport(0, 0, 512, 512);
 	
 	eq_to_cube_shader_program.use();
 	eq_to_cube_shader_program.set_int("equirectangularMap", 0);
 	eq_to_cube_shader_program.set_proj(capture_proj);
 
 	texture::activate(GL_TEXTURE0);
-	signal_hill_hdr.bind();
+	hdri_map.bind();
 	
 	for(int i = 0; i < 6; i++)
 	{
 		eq_to_cube_shader_program.set_view(origin_capture_views[i]);
-		hdr_to_cube_fb.attach_texture_2d_color(signal_hill_cubemap, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i);
+		precompute_fb.attach_texture_2d_color(hdri_cube_map, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0);
 
-		std::cout << "Attaching cube face " << i << " " << FB::validate() << std::endl;
-		FB::clear_color_buffer();
-		FB::clear_depth_buffer();
+		std::cout << "Converting HDR to cube face " << i << " " << FB::validate() << std::endl;
+		FB::clear_frame();
 
+		//renderCube();
 		debug_eq_to_cube_model.draw(eq_to_cube_shader_program);
+	} // convert .hdr to cubemap
+
+	hdri_cube_map.bind();
+	glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // hdr to cube map
+	
+
+
+
+
+	
+	glViewport(0, 0, IRRADIANCE_RES, IRRADIANCE_RES);
+	precompute_fb.bind();
+	precompute_rb.reallocate(GL_DEPTH_COMPONENT24, IRRADIANCE_RES, IRRADIANCE_RES);
+	
+	irradiance_diffuse_shader_program.use();
+	irradiance_diffuse_shader_program.set_int("environmentMap", 0);
+	irradiance_diffuse_shader_program.set_proj(capture_proj);
+
+	texture::activate(GL_TEXTURE0);
+	hdri_cube_map.bind();
+
+	for(int i = 0; i < 6; i++)
+	{
+		irradiance_diffuse_shader_program.set_view(origin_capture_views[i]);
+		precompute_fb.attach_texture_2d_color(irradiance_map, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0);
+		std::cout << "Convoluting cube face " << i << " " << FB::validate() << std::endl;
+		FB::clear_frame();
+
+		//renderCube();
+		debug_eq_to_cube_model.draw(irradiance_diffuse_shader_program);
+	} // Convolute environment map for diffuse // precompute irradiance
+
+
+
+
+
+	
+	prefilter_shader_program.use();
+	prefilter_shader_program.set_int("environmentMap", 0);
+	prefilter_shader_program.set_proj(capture_proj);
+	texture::activate(GL_TEXTURE0);
+	hdri_cube_map.bind();
+	
+	precompute_fb.bind();
+	unsigned int max_mip_level = 5;
+
+	for(unsigned int mip = 0; mip < max_mip_level; mip++)
+	{
+		unsigned int mip_res = PREFILTER_RES * std::pow(0.5, mip);
+		precompute_rb.reallocate(GL_DEPTH_COMPONENT24, mip_res, mip_res);
+		glViewport(0, 0, mip_res, mip_res);
+
+		float roughness = static_cast<float>(mip) / static_cast<float>(max_mip_level - 1);
+		prefilter_shader_program.set_float("roughness", roughness);
+
+		for(unsigned int i = 0; i < 6; i++)
+		{
+			prefilter_shader_program.set_view(origin_capture_views[i]);
+			precompute_fb.attach_texture_2d_color(prefilter_map, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, mip);
+			//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, prefilter_map.get_id(), mip);
+
+			std::cout << "Convoluting Prefilter, MIP:  " << mip << ", Face: " << i << " " << FB::validate() << std::endl;
+			
+			FB::clear_color_buffer();
+			FB::clear_depth_buffer();
+
+			debug_eq_to_cube_model.draw(prefilter_shader_program);
+		}
 	}
 
+	
 	FB::unbind();
 	glViewport(0, 0, WIDTH, HEIGHT);
 	#pragma endregion
 
 	#pragma region Loop
+
+	
 	
 	while(!glfwWindowShouldClose(window))
 	{
@@ -782,8 +916,24 @@ int main()  // NOLINT(bugprone-exception-escape)
 		else
 		{
 			render_forward(use_pbr ? pbr_forward_shader_program : basic_shader_program);
+
+			/*skybox_shader_program.use();
+			skybox_shader_program.set_int("cubeMap", 0);
+			texture::activate(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map.get_id());*/
 			render_skybox(skybox_renderer, skybox_shader_program);
-			render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
+
+			//bg.use();
+			//bg.set_matrix("projection", cam.get_proj_matrix());
+			//bg.set_matrix("view", cam.get_view_matrix());
+			//glActiveTexture(GL_TEXTURE0);
+			////glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
+			////glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap); // display irradiance map
+			////glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map.get_id()); // display prefilter map
+			//glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap); // display prefilter map
+			//renderCube();
+			
+			//render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
 		}
 
 		//blit to bloom buffer
@@ -859,6 +1009,7 @@ void render_model(model &m, const shader_program &program)
 	program.set_float("useShadow", use_shadow ? 1 : 0);
 	program.set_float("useNormalMaps", use_normal_maps ? 1 : 0);
 	program.set_float("useParallax", use_parallax ? 1 : 0);
+	program.set_float("useIBL", use_ibl ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
 	
 	send_point_lights_to_shader(program);
@@ -991,6 +1142,7 @@ void render_skybox(const renderer& rend, const shader_program& program)
 	mvp_matrix.view = glm::mat4(glm::mat3(cam.get_view_matrix()));
 	program.use();
 	program.set_mvp(mvp_matrix);
+	program.set_float("lod", skybox_lod);
 	rend.draw_cube_map(program);
 	
 	FB::set_depth_writing(true);
@@ -1227,7 +1379,6 @@ void render_debug_point_lights(model& m, shader_program& program)
 			//} // debug visual pass
 }
 
-
 void render_debug_windows()
 {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -1323,10 +1474,12 @@ void render_debug_windows()
 	ImGui::Checkbox("Use Deferred", &use_deferred);
 	ImGui::Checkbox("Use Light Debug", &use_light_debug);
 	ImGui::Checkbox("Use PBR", &use_pbr);
+	ImGui::Checkbox("Use IBL", &use_ibl);
 	
 
 	ImGui::Spacing();
 
+	ImGui::SliderFloat("Skybox LOD", &skybox_lod, 0, 5, "%.3f", 1.0f);
 	ImGui::SliderFloat("HDR Exposure", &hdr_exposure, 0, 10, "%.3f", 1.0f);
 	ImGui::SliderFloat("Brightness Threshold", &brightness_threshold, 1, 100, "%.3f", 1.0f);
 	
@@ -1872,3 +2025,77 @@ void scroll_callback(GLFWwindow* window, const double x_offset, const double y_o
 }
 
 #pragma endregion
+
+
+static unsigned int cubeVAO = 0;
+static unsigned int cubeVBO = 0;
+static void renderCube()
+{
+	// initialize (if necessary)
+	if (cubeVAO == 0)
+	{
+		float vertices[] = {
+			// back face
+			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+			 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+			 1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f, // bottom-right         
+			 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+			-1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f, // top-left
+			// front face
+			-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+			 1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f, // bottom-right
+			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+			-1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f, // top-left
+			-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+			// left face
+			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+			-1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-left
+			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+			-1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+			// right face
+			 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+			 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+			 1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-right         
+			 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+			 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+			 1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-left     
+			// bottom face
+			-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+			 1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f, // top-left
+			 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+			 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+			-1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+			-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+			// top face
+			-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+			 1.0f,  1.0f , 1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+			 1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f, // top-right     
+			 1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+			-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+			-1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f  // bottom-left        
+		};
+		glGenVertexArrays(1, &cubeVAO);
+		glGenBuffers(1, &cubeVBO);
+		// fill buffer
+		glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+		// link vertex attributes
+		glBindVertexArray(cubeVAO);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindVertexArray(0);
+	}
+	// render Cube
+	glBindVertexArray(cubeVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+	glBindVertexArray(0);
+}

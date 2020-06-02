@@ -17,7 +17,7 @@ public:
 	void generate();
 	void bind() const;
 	void attach_texture_2d_color(texture& tex, const GLenum attachment);
-	void attach_texture_2d_color(texture& tex, const GLenum attachment, const GLenum target);
+	void attach_texture_2d_color(texture& tex, const GLenum attachment, const GLenum target, const int mip_level = 0);
 	void attach_texture_2d_depth(texture& tex, const GLenum attachment);
 	void attach_texture_2d_stencil(texture& tex, const GLenum attachment);
 	void attach_texture_2d_depth_stencil(texture& tex, const GLenum attachment);

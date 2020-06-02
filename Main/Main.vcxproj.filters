@@ -18,9 +18,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\Source.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\glad\glad.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -117,6 +114,15 @@
     <ClCompile Include="src\cpp\data\primitive.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\testing\test.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Source.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\pixel\basic_p.glsl" />
@@ -174,6 +180,20 @@
     <None Include="res\shaders\pixel\pbr\pbr_forward_p.glsl" />
     <None Include="res\shaders\vertex\pbr\equirectangular_to_cube_v.glsl" />
     <None Include="res\shaders\pixel\pbr\equirectangular_to_cube_p.glsl" />
+    <None Include="res\shaders\vertex\pbr\irradiance_v.glsl" />
+    <None Include="res\shaders\pixel\pbr\irradiance_p.glsl" />
+    <None Include="res\shaders\vertex\pbr\prefilter_v.glsl" />
+    <None Include="res\shaders\pixel\pbr\prefilter_p.glsl" />
+    <None Include="src\testing\2.2.1.prefilter.fs" />
+    <None Include="src\testing\2.2.1.brdf.vs" />
+    <None Include="src\testing\2.2.1.brdf.fs" />
+    <None Include="src\testing\2.2.1.cubemap.vs" />
+    <None Include="src\testing\2.2.1.equirectangular_to_cubemap.fs" />
+    <None Include="src\testing\2.2.1.irradiance_convolution.fs" />
+    <None Include="src\testing\2.2.1.background.fs" />
+    <None Include="src\testing\2.2.1.background.vs" />
+    <None Include="src\testing\2.2.1.pbr.fs" />
+    <None Include="src\testing\2.2.1.pbr.vs" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">
@@ -291,6 +311,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\headers\data\primitive.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\testing\shader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\testing\camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\testing\model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\testing\mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

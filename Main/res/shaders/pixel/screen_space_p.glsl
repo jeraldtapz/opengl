@@ -47,12 +47,11 @@ void main()
 		color += samples[i] * kernel[i];
 
 
-	//hdr
 	vec3 c = texture(screenColor, TexCoord).rgb;
 	vec3 bloomColor = texture(bloomBlur, TexCoord).rgb;
 	c += useBloom * bloomColor;
 
-	//tonemapping
+//	//tonemapping
 	vec3 hdrColor = c / (c + vec3(1));
 	hdrColor = vec3(1.0) - exp(-c * exposure);
 	hdrColor = useHDR * hdrColor + (1 - useHDR) * c;

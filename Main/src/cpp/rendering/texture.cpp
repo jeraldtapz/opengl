@@ -104,16 +104,15 @@ texture::texture(const std::string& absolute_path, const texture_type type, cons
 			glGenerateMipmap(GL_TEXTURE_2D);
 
 
-		set_wrap_mode(GL_REPEAT);
+		set_wrap_mode(GL_CLAMP_TO_EDGE);
 		set_filter_mag(GL_LINEAR);
 		set_filter_min(GL_LINEAR);
+		stbi_image_free(data);
 	}
 	else
 	{
 		std::cout << "ERROR: FAILED TO LOAD TEXTURE" << std::endl;
 	}
-
-	stbi_image_free(data);
 }
 
 texture::texture(const texture_type type, const unsigned int width, const unsigned int height, const GLenum format, const GLenum internal_format, const GLenum data_format, const bool generate_mipmaps)
@@ -247,13 +246,13 @@ texture::texture(const texture_type type, const unsigned int width, const unsign
 
 
 //used for cube_maps
-texture::texture(const std::vector<std::string>& paths, const texture_type type, const GLenum internal_format, const GLenum format, const GLenum data_format)
+texture::texture(const std::vector<std::string>& paths, const texture_type type, const GLenum internal_format, const GLenum format, const GLenum data_format, const unsigned int dimension, const bool generate_mipmaps, const GLenum filter_min)
 {
 	id = 0;
 	
 	this->wrap_mode = GL_CLAMP_TO_EDGE;
 	this->filter_mag = GL_LINEAR;
-	this->filter_min = GL_LINEAR;
+	this->filter_min = filter_min;
 
 	this->type = type;
 	is_multi_sampled = false;
@@ -288,18 +287,20 @@ texture::texture(const std::vector<std::string>& paths, const texture_type type,
 		}
 		else
 		{
-			this->width = config::WIDTH;
-			this->height = config::HEIGHT;
+			this->width = dimension;
+			this->height = dimension;
 			this->channels = 3;
-			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, 1024, 1024, 0, format, data_format, nullptr);
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, dimension, dimension, 0, format, data_format, nullptr);
 		}
-
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, filter_min);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+	if (generate_mipmaps)
+		glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 }
 
 
@@ -348,9 +349,6 @@ unsigned texture::get_height() const
 	return height;
 }
 
-
-
-
 void texture::bind() const
 {
 	if (type == texture_type::cube)
@@ -377,7 +375,7 @@ std::string texture::type_to_string(const texture_type type)
 		case texture_type::depth: return "depth";
 		case texture_type::stencil: return "stencil";
 		case texture_type::depth_stencil: return "depthStencil";
-		case texture_type::cube: return "cube";
+		case texture_type::cube: return "diffIrradianceTexture";
 		case texture_type::mask: return "maskTexture";
 		default: return "error";
 	}

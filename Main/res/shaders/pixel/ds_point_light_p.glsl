@@ -33,7 +33,7 @@ uniform float useDebug;
 
 void main()
 {
-	vec2 coord = gl_FragCoord.xy/vec2(1600, 900);
+	vec2 coord = gl_FragCoord.xy/vec2(1280, 720);
 	vec3 worldPos = texture(gPos, coord).rgb;
 	vec3 normal = texture(gNormal, coord).rgb;
 	vec4 diffSpec = texture(gDiffSpec, coord);

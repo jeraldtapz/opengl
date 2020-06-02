@@ -5,11 +5,20 @@
 #include <iostream>
 
 
-shader::shader(const std::string &path, const GLenum shader_type)
+shader::shader(const std::string &path, const GLenum shader_type, const bool relative)
 {
-	const std::string actual = std::string("res/shaders/")
-	.append(shader_type == GL_GEOMETRY_SHADER ? "geometry/" : (shader_type == GL_VERTEX_SHADER ? "vertex/" : "pixel/"))
-	.append(path).append(".glsl");
+	std::string actual;
+
+	if(relative)
+	{
+		actual = std::string("res/shaders/")
+			.append(shader_type == GL_GEOMETRY_SHADER ? "geometry/" : (shader_type == GL_VERTEX_SHADER ? "vertex/" : "pixel/"))
+			.append(path).append(".glsl");
+	}
+	else
+	{
+		actual = path;
+	}
 	
 	std::ifstream inf;
 

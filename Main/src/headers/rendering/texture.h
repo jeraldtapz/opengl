@@ -52,5 +52,5 @@ public:
 	explicit  texture(const texture_type type, const unsigned int width, const unsigned int height,
 		const GLenum format, const GLenum internal_format, const GLenum data_format, const bool generate_mipmaps, const unsigned int samples);
 
-	explicit  texture(const std::vector<std::string>& paths, texture_type type, const GLenum internal_format, const GLenum format, GLenum data_format);
+	explicit  texture(const std::vector<std::string>& paths, texture_type type, const GLenum internal_format, const GLenum format, GLenum data_format, const unsigned int dimension, const bool generate_mipmaps, const GLenum filter_min);
 };

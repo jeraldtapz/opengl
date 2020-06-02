@@ -43,6 +43,7 @@ struct Material
 	sampler2D shadowMap0;
 	sampler2D heightTexture0;
 	samplerCube reflectionTexture0;
+	samplerCube diffIrradianceTexture0;
 
 	vec3 specularColor;
 	vec3 diffuseColor;
@@ -55,7 +56,7 @@ vec2 GetTexCoordWithOffset();
 vec3 CalculateDirectionalLight(DirLight light, vec3 normal, vec3 fragToView, vec3 albedo, float metallic, float roughness, vec3 f0);
 vec3 CalculatePointLightContrib(PointLight light, vec3 normal, vec3 fragToView, vec3 albedo, float metallic, float roughness, vec3 f0);
 vec3 CalculateSpotLightContrib(SpotLight light, vec3 normal, vec3 fragToView, vec3 albedo, float metallic, float roughness, vec3 f0);
-//vec3 CalculateReflectionContrib();
+vec3 CalculateAmbientDiffuse(samplerCube irradianceMap, vec3 normal, vec3 fragToView, vec3 albedo, vec3 f0, float ao, float roughness);
 float CalculateDirectionalShadow(vec3 normal);
 //float CalculatePointShadow();
 //vec2 GetTexCoords(float useParallaxLocal);
@@ -89,6 +90,7 @@ uniform vec2 offset;
 uniform float farPlane;
 uniform float useShadow;
 uniform float useNormalMaps;
+uniform float useIBL;
 uniform float useParallax; //uniforms
 
 const float PI = 3.14159265359;
@@ -107,7 +109,6 @@ void main()
 	float metallic = mask.r;
 	float roughness = mask.g;
 	roughness = clamp(roughness, 0.01, 1);
-	metallic = clamp(metallic, 0.01, 1);
 	float ao = mask.b;
 	
 	vec3 f0 = vec3(0.04); // 0.04 is normally accepted for most dielectrics
@@ -129,9 +130,9 @@ void main()
 
 	spotLightContrib *= isFlashlightOn;
 
-	vec3 ambient = vec3(0.05) * albedo * ao;
+	vec3 ambient = CalculateAmbientDiffuse(mat.diffIrradianceTexture0, normal, fragToView, albedo, f0, ao, roughness) * useIBL;
 
-	FragColor = vec4(point_light_contrib + dirLightContrib , 1.0);
+	FragColor = vec4(point_light_contrib + dirLightContrib + ambient , 1.0);
 }
 
 vec2 GetTexCoordWithOffset()
@@ -233,6 +234,17 @@ vec3 CalculateSpotLightContrib(SpotLight light, vec3 normal, vec3 fragToView, ve
 	vec3 Lo = (kD * albedo / PI + specular) * radiance * nDotL; // BRDF * RADIANCE * NDOTL
 
 	return Lo;
+}
+
+vec3 CalculateAmbientDiffuse(samplerCube irradianceMap, vec3 normal, vec3 fragToView, vec3 albedo, vec3 f0, float ao, float roughness)
+{
+	vec3 kS = FresnelSchlickRoughness(max(dot(normal, fragToView), 0.0), f0, roughness);
+	vec3 kD = 1.0 - kS;
+	vec3 irradiance =texture(irradianceMap, fragToView).rgb;
+	vec3 diffuse = irradiance * albedo;
+	vec3 ambient = kD * diffuse * ao;
+
+	return ambient;
 }
 
 float DistributionGGX(vec3 normal, vec3 halfwayVector, float roughness)

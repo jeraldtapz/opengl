@@ -7,6 +7,7 @@ public:
 	render_buffer(GLenum internal_format, unsigned int width, unsigned int height);
 	render_buffer(GLenum internal_format, unsigned int width, unsigned int height, unsigned int samples);
 
+	void reallocate(GLenum internal_format, unsigned int width, unsigned int height);
 	void bind() const;
 	static void unbind();
 	

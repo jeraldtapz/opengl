@@ -13,7 +13,7 @@ class shader
 
 public:
 	unsigned int id; //shader get_id
-	explicit shader(const std::string& path, const GLenum shader_type);
+	explicit shader(const std::string& path, const GLenum shader_type, const bool relative = true);
 	shader();
 };
 

@@ -194,7 +194,9 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClCompile Include="src\imgui\imgui_impl_glfw.cpp" />
     <ClCompile Include="src\imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="src\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Source.cpp" />
+    <ClCompile Include="src\testing\test.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\shaders\geometry\point_shadow_g.glsl" />
@@ -210,7 +212,9 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
     <None Include="res\shaders\pixel\pbr\equirectangular_to_cube_p.glsl" />
+    <None Include="res\shaders\pixel\pbr\irradiance_p.glsl" />
     <None Include="res\shaders\pixel\pbr\pbr_forward_p.glsl" />
+    <None Include="res\shaders\pixel\pbr\prefilter_p.glsl" />
     <None Include="res\shaders\pixel\planet_p.glsl" />
     <None Include="res\shaders\pixel\point_shadow_p.glsl" />
     <None Include="res\shaders\pixel\screen_space_p.glsl" />
@@ -227,7 +231,9 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
     <None Include="res\shaders\vertex\pbr\equirectangular_to_cube_v.glsl" />
+    <None Include="res\shaders\vertex\pbr\irradiance_v.glsl" />
     <None Include="res\shaders\vertex\pbr\pbr_forward_v.glsl" />
+    <None Include="res\shaders\vertex\pbr\prefilter_v.glsl" />
     <None Include="res\shaders\vertex\planet_v.glsl" />
     <None Include="res\shaders\vertex\point_shadow_v.glsl" />
     <None Include="res\shaders\vertex\screen_space_v.glsl" />
@@ -250,6 +256,16 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="src\shaders\vertex\light_v.glsl" />
     <None Include="src\shaders\vertex\outline_v.glsl" />
     <None Include="src\shaders\pixel\transparent_p.glsl" />
+    <None Include="src\testing\2.2.1.background.fs" />
+    <None Include="src\testing\2.2.1.background.vs" />
+    <None Include="src\testing\2.2.1.cubemap.vs" />
+    <None Include="src\testing\2.2.1.equirectangular_to_cubemap.fs" />
+    <None Include="src\testing\2.2.1.irradiance_convolution.fs" />
+    <None Include="src\testing\2.2.1.pbr.fs" />
+    <None Include="src\testing\2.2.1.pbr.vs" />
+    <None Include="src\testing\2.2.1.brdf.fs" />
+    <None Include="src\testing\2.2.1.brdf.vs" />
+    <None Include="src\testing\2.2.1.prefilter.fs" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="res\shaders\pixel\simple_depth_p.glsl" />
@@ -291,6 +307,10 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <ClInclude Include="src\imgui\imstb_rectpack.h" />
     <ClInclude Include="src\imgui\imstb_textedit.h" />
     <ClInclude Include="src\imgui\imstb_truetype.h" />
+    <ClInclude Include="src\testing\camera.h" />
+    <ClInclude Include="src\testing\mesh.h" />
+    <ClInclude Include="src\testing\model.h" />
+    <ClInclude Include="src\testing\shader.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\textures\floor\bricks_col.jpg" />

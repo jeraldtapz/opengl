@@ -250,6 +250,8 @@ std::vector<mesh> model::get_meshes() const
 
 mesh* model::get_mesh_ptr(const int index)
 {
+	if (!is_model_loaded)
+		return nullptr;
 	return renderers[index].get_mesh_ptr().get();
 }
 
