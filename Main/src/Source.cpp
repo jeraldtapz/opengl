@@ -1,11 +1,7 @@
 // ReSharper disable CppClangTidyCppcoreguidelinesNarrowingConversions
 // ReSharper disable CppClangTidyBugproneNarrowingConversions
-
-
 #define FB frame_buffer  // NOLINT(cppcoreguidelines-macro-usage)
 #define TEX_T texture_type // NOLINT(cppcoreguidelines-macro-usage)
-
-#pragma region includes
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -39,11 +35,7 @@
 #include "rendering/uniform_buffer_object.h"
 #include "utils/config.h"
 
-#pragma endregion
-
 #pragma region function declarations
-
-static void renderCube();
 
 void set_vp_from_camera();
 std::string get_tex(const std::string& path);
@@ -116,17 +108,17 @@ float key_press_cooldown = 0.25f;
 float last_cursor_swap = 0.0f;
 float last_flash_light_swap = 0.0f;
 
+int cursor_mode = GLFW_CURSOR_NORMAL;
+bool first_mouse;
+bool is_flash_light_on = false;
+bool is_open;
+
 #pragma endregion
 
 
 float hdr_exposure = 1.0f;
 float brightness_threshold = 2.0f;
 float skybox_lod = 0;
-
-int cursor_mode = GLFW_CURSOR_NORMAL;
-bool first_mouse;
-bool is_flash_light_on = false;
-bool is_open;
 bool use_shadow = true;
 bool use_normal_maps = true;
 bool use_parallax = false;
@@ -136,13 +128,12 @@ bool use_bloom = false;
 bool use_deferred = false;
 bool use_light_debug = false;
 bool use_pbr = false;
-bool use_ibl = true;
+bool use_ibl = true; // debug values
 
 color ambient_color;
 std::map<float, transform> sorted;
 mvp mvp_matrix;
 mvp dir_shadow_map_mvp_matrix;
-glm::mat4* asteroid_model_matrices = new glm::mat4[ASTEROID_COUNT];
 
 //glfw
 GLFWwindow* window;
@@ -349,13 +340,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader irradiance_pixel = shader("pbr/irradiance_2_p", GL_FRAGMENT_SHADER);
 
 	shader prefilter_vertex = shader("pbr/prefilter_v", GL_VERTEX_SHADER);
-	//shader prefilter_vertex = shader("src/testing/2.2.1.cubemap.vs", GL_VERTEX_SHADER, false);
 	shader prefilter_pixel = shader("pbr/prefilter_p", GL_FRAGMENT_SHADER);
-	//shader prefilter_pixel = shader("src/testing/2.2.1.prefilter.fs", GL_FRAGMENT_SHADER, false);
-
-	shader bg_vertex = shader("src/testing/2.2.1.background.vs", GL_VERTEX_SHADER, false);
-	shader bg_pixel = shader("src/testing/2.2.1.background.fs", GL_FRAGMENT_SHADER, false);
-	shader_program bg = shader_program(&bg_vertex, &bg_pixel);
 
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -407,33 +392,18 @@ int main()  // NOLINT(bugprone-exception-escape)
 	texture hdri_map = texture(get_tex("hdr/ballroom_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
 
 	std::vector<std::string> skybox_texture_paths = {
-		"res/textures/skybox_lowres/px.png",
-		"res/textures/skybox_lowres/nx.png" ,
-		"res/textures/skybox_lowres/ny.png",
-		"res/textures/skybox_lowres/py.png",
-		"res/textures/skybox_lowres/pz.png",
-		"res/textures/skybox_lowres/nz.png"
+		"res/textures/skybox_5/px.png",
+		"res/textures/skybox_5/nx.png" ,
+		"res/textures/skybox_5/ny.png",
+		"res/textures/skybox_5/py.png",
+		"res/textures/skybox_5/pz.png",
+		"res/textures/skybox_5/nz.png"
 	};
 	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2048, false, GL_LINEAR); // textures
 
 	texture hdri_cube_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, ENV_MAP_RES, false , GL_LINEAR_MIPMAP_LINEAR);
 	texture irradiance_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, IRRADIANCE_RES, false, GL_LINEAR);
 	texture prefilter_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, PREFILTER_RES, true, GL_LINEAR_MIPMAP_LINEAR);
-
-	unsigned int prefilterMap;
-	glGenTextures(1, &prefilterMap);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap);
-	for (unsigned int i = 0; i < 6; ++i)
-	{
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, 128, 128, 0, GL_RGB, GL_FLOAT, nullptr);
-	}
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // be sure to set minifcation filter to mip_linear 
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	// generate mipmaps for the cubemap so OpenGL automatically allocates the required memory.
-	glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
 	#pragma endregion
 
@@ -522,7 +492,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 	renderer skybox_renderer = renderer(std::make_shared<mesh>(skybox_cube_mesh));
 	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(destination_quad_mesh));
 	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
-	renderer floor_renderer = renderer(std::make_shared<mesh>(floor_mesh)); //Renderers
 
 	model viking_shield = model("res/models/viking_shield/scene.gltf", true);
 	viking_shield.set_name("Viking Shield");
@@ -545,41 +514,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 		cl->insert_texture(irradiance_map);
 	}
 	
-
-	model light_rep_model = model({ primitive::get_sphere() });
-	//model asteroid = model("res/models/rock/rock.obj", false, &asteroid_model_matrices[0], 4 * ASTEROID_COUNT * sizeof(glm::vec4));
-	//model planet = model("res/models/planet/planet.obj", false);
-
-	srand(static_cast<unsigned int>(glfwGetTime()));
-	float radius = 50.0f;
-	float offset = 70.f;
-
-	for (unsigned int i = 0; i < ASTEROID_COUNT; i++)
-	{
-		glm::mat4 m = glm::mat4(1.0f);
-		float angle = static_cast<float>(i) / static_cast<float>(ASTEROID_COUNT) * 360.0f;
-		float displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
-		float x = sin(angle) * radius + displacement;
-		displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
-		float y = displacement * 0.4f; // keep height of field smaller compared to width of x and z
-		displacement = static_cast<float>(rand() % static_cast<int>(2 * offset * 100) / 100.0f - offset);
-		float z = cos(angle) * radius + displacement;
-		m = glm::translate(m, glm::vec3(x, y, z));
-
-		float scale = static_cast<float>(rand() % 20 / 100.0f + 0.05f);
-		m = glm::scale(m, glm::vec3(scale));
-
-		// 3. rotation: add random rotation around a (semi)randomly picked rotation axis vector
-		float rot_angle = static_cast<float>(rand() % 360);
-		m = glm::rotate(m, rot_angle, glm::vec3(0.4f, 0.6f, 0.8f));
-
-		asteroid_model_matrices[i] = m;
-	} //Loaded models
-	
-	/*std::vector<mesh> cube_meshes = { cube_mesh };
-	model cube_model = model(cube_meshes);
-	cube_model.set_name("Cube");*/
-
 	std::vector<mesh> floor_meshes = { floor_mesh };
 	model floor_model = model(floor_meshes); //generated models
 	floor_model.set_name("Floor");
@@ -587,14 +521,12 @@ int main()  // NOLINT(bugprone-exception-escape)
 	model ds_dir_light_quad_model = model({ ds_dir_light_quad_mesh });
 	model ds_point_light_sphere_model = model({ ds_point_light_sphere_mesh });
 
-	model debug_eq_to_cube_model = model({ debug_eq_to_cube_mesh });
-	debug_eq_to_cube_model.set_name("Debug Cube");
+	model debug_cube = model({ debug_eq_to_cube_mesh });
+	debug_cube.set_name("Debug Cube");
 
-	//game_models.push_back(pistol_model);
 	game_models.push_back(floor_model);
 	game_models.push_back(canon_lens);
 	game_models.push_back(viking_shield);
-	//game_models.push_back(steampunk_glasses);
 
 	#pragma endregion
 
@@ -772,10 +704,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	floor_model.get_transform()->set_rotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 	floor_model.get_transform()->set_scale(glm::vec3(15, 15, 1));
-	tiling_and_offset floor_tiling_and_offset = tiling_and_offset{ glm::vec2(15,15), glm::vec2(0,0) };
-
-	light_rep_model.get_transform()->set_position(glm::vec3(1, 5, 0));
-	light_rep_model.get_transform()->set_scale(glm::vec3(0.1f));
 
 	canon_lens.get_transform()->set_position(glm::vec3(3, 5, 0));
 
@@ -808,19 +736,14 @@ int main()  // NOLINT(bugprone-exception-escape)
 		FB::clear_frame();
 
 		//renderCube();
-		debug_eq_to_cube_model.draw(eq_to_cube_shader_program);
+		debug_cube.draw(eq_to_cube_shader_program);
 	} // convert .hdr to cubemap
 
 	hdri_cube_map.bind();
 	glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // hdr to cube map
 	
-
-
-
-
 	
 	glViewport(0, 0, IRRADIANCE_RES, IRRADIANCE_RES);
-	precompute_fb.bind();
 	precompute_rb.reallocate(GL_DEPTH_COMPONENT24, IRRADIANCE_RES, IRRADIANCE_RES);
 	
 	irradiance_diffuse_shader_program.use();
@@ -837,13 +760,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 		std::cout << "Convoluting cube face " << i << " " << FB::validate() << std::endl;
 		FB::clear_frame();
 
-		//renderCube();
-		debug_eq_to_cube_model.draw(irradiance_diffuse_shader_program);
-	} // Convolute environment map for diffuse // precompute irradiance
-
-
-
-
+		debug_cube.draw(irradiance_diffuse_shader_program);
+	}
+	// precompute irradiance
 
 	
 	prefilter_shader_program.use();
@@ -875,9 +794,10 @@ int main()  // NOLINT(bugprone-exception-escape)
 			FB::clear_color_buffer();
 			FB::clear_depth_buffer();
 
-			debug_eq_to_cube_model.draw(prefilter_shader_program);
+			debug_cube.draw(prefilter_shader_program);
 		}
 	}
+	// prefilter env map
 
 	
 	FB::unbind();
@@ -886,8 +806,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	#pragma region Loop
 
-	
-	
 	while(!glfwWindowShouldClose(window))
 	{
 		process_input(window);
@@ -916,24 +834,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 		else
 		{
 			render_forward(use_pbr ? pbr_forward_shader_program : basic_shader_program);
-
-			/*skybox_shader_program.use();
-			skybox_shader_program.set_int("cubeMap", 0);
-			texture::activate(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map.get_id());*/
 			render_skybox(skybox_renderer, skybox_shader_program);
-
-			//bg.use();
-			//bg.set_matrix("projection", cam.get_proj_matrix());
-			//bg.set_matrix("view", cam.get_view_matrix());
-			//glActiveTexture(GL_TEXTURE0);
-			////glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
-			////glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap); // display irradiance map
-			////glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map.get_id()); // display prefilter map
-			//glBindTexture(GL_TEXTURE_CUBE_MAP, prefilterMap); // display prefilter map
-			//renderCube();
-			
-			//render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
+			render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
 		}
 
 		//blit to bloom buffer
@@ -1194,7 +1096,7 @@ void render_forward(const shader_program& program)
 
 		if (model_name == "Floor")
 		{
-			t.tiling = glm::vec2(4, 4);
+			t.tiling = glm::vec2(game_model.get_transform()->scale());
 			t.offset = glm::vec2(0);
 		}
 		else
@@ -1345,6 +1247,9 @@ void bloom_postprocess(const frame_buffer& fb, const renderer& rend, const shade
 
 void render_debug_point_lights(model& m, shader_program& program)
 {
+	if (!use_light_debug)
+		return;
+	
 	FB::enable_depth_testing();
 	FB::disable_stencil_testing();
 	
@@ -1353,30 +1258,19 @@ void render_debug_point_lights(model& m, shader_program& program)
 	m.get_mesh_ptr(0)->should_cull_face = false;
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-	if(use_light_debug)
+	for (auto& point_light : point_lights)
 	{
-		for (auto& point_light : point_lights)
+		if(point_light.is_active)
 		{
-			if(point_light.is_active)
-			{
-				m.get_transform()->set_position(point_light.get_transform()->position());
-				m.get_transform()->set_scale(glm::vec3(point_light.radius));
-				program.set_model(m.get_transform()->get_model_matrix());
-				program.set_vec3("color", point_light.diffuse.to_vec3());
-				m.draw(program);
-			}
+			m.get_transform()->set_position(point_light.get_transform()->position());
+			m.get_transform()->set_scale(glm::vec3(point_light.radius));
+			program.set_model(m.get_transform()->get_model_matrix());
+			program.set_vec3("color", point_light.diffuse.to_vec3());
+			m.draw(program);
 		}
 	}
 
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	//if(use_light_debug)
-			//{
-			//	sphere.get_mesh_ptr(0)->should_cull_face = false;
-			//	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-			//	point_light_program.set_float("useDebug", true);
-			//	sphere.draw(point_light_program);
-			//	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-			//} // debug visual pass
 }
 
 void render_debug_windows()
@@ -2025,77 +1919,3 @@ void scroll_callback(GLFWwindow* window, const double x_offset, const double y_o
 }
 
 #pragma endregion
-
-
-static unsigned int cubeVAO = 0;
-static unsigned int cubeVBO = 0;
-static void renderCube()
-{
-	// initialize (if necessary)
-	if (cubeVAO == 0)
-	{
-		float vertices[] = {
-			// back face
-			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-			 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
-			 1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f, // bottom-right         
-			 1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
-			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-			-1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f, // top-left
-			// front face
-			-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
-			 1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f, // bottom-right
-			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
-			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
-			-1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f, // top-left
-			-1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
-			// left face
-			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
-			-1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-left
-			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
-			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
-			-1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-right
-			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
-			// right face
-			 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
-			 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
-			 1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-right         
-			 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
-			 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
-			 1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-left     
-			// bottom face
-			-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
-			 1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f, // top-left
-			 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
-			 1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
-			-1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f, // bottom-right
-			-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
-			// top face
-			-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
-			 1.0f,  1.0f , 1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
-			 1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f, // top-right     
-			 1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
-			-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
-			-1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f  // bottom-left        
-		};
-		glGenVertexArrays(1, &cubeVAO);
-		glGenBuffers(1, &cubeVBO);
-		// fill buffer
-		glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-		// link vertex attributes
-		glBindVertexArray(cubeVAO);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
-	}
-	// render Cube
-	glBindVertexArray(cubeVAO);
-	glDrawArrays(GL_TRIANGLES, 0, 36);
-	glBindVertexArray(0);
-}
