@@ -91,37 +91,19 @@ void main()
         float NdotH = max(dot(N, H), 0.0);
         float HdotV = max(dot(H, V), 0.0);
 
-        if(NdotL > 0.0)
-        {
-            // sample from the environment's mip level based on roughness/pdf
-            float D   = DistributionGGX(NdotH, roughness);
-            float NdotH = max(dot(N, H), 0.0);
-            float HdotV = max(dot(H, V), 0.0);
-            float pdf = D * NdotH / (4.0 * HdotV) + 0.0001; 
+        float D = DistributionGGX(NdotH, roughness);
+        float pdf = ((D * NdotH)/(4.0 * HdotV)) + 0.0001;
 
-            float resolution = 512.0; // resolution of source cubemap (per face)
-            float saTexel  = 4.0 * PI / (6.0 * resolution * resolution);
-            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+        float resolution = 512;
+        float saTexel = 4.0 * PI / (6.0 * resolution * resolution);
+        float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
 
-            float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel); 
-            
-            prefilteredColor += textureLod(environmentMap, L, mipLevel).rgb * NdotL;
-            totalWeight      += NdotL;
-        }
+        float mipLevel = (1 - WhenEqual(roughness, 0.0)) * 0.5 * log2(saSample/ saTexel);
+        mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel); 
 
-//        float D = DistributionGGX(NdotH, roughness);
-//        float pdf = ((D * NdotH)/(4.0 * HdotV)) + 0.0001;
-//
-//        float resolution = 512;
-//        float saTexel = 4.0 * PI / (6.0 * resolution * resolution);
-//        float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
-//
-//        float mipLevel = (1 - WhenEqual(roughness, 0.0)) * 0.5 * log2(saSample/ saTexel);
-//        mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel); 
-//
-//        float greaterThanZero = WhenGreaterThan(NdotL, 0);
-//        prefilteredColor += greaterThanZero * textureLod(environmentMap, L, mipLevel).rgb * NdotL;
-//        totalWeight += greaterThanZero * NdotL;
+        float greaterThanZero = WhenGreaterThan(NdotL, 0);
+        prefilteredColor += greaterThanZero * textureLod(environmentMap, L, mipLevel).rgb * NdotL;
+        totalWeight += greaterThanZero * NdotL;
     }
 
     prefilteredColor = prefilteredColor / totalWeight;
