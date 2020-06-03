@@ -18,9 +18,9 @@ class mesh
 	GLenum cull_face;
 
 	explicit mesh(const std::vector<vertex>&);
-	mesh(const std::vector<vertex>&, std::vector<unsigned int>&);
-	mesh(const std::vector<vertex>&, std::vector<texture>&);
-	mesh(const std::vector<vertex>&, std::vector<unsigned int>& , std::vector<texture>&);
+	mesh(const std::vector<vertex> &, std::vector<unsigned int>&);
+	mesh(const std::vector<vertex> &, std::vector<texture>&);
+	mesh(const std::vector<vertex> &, std::vector<unsigned int>& , std::vector<texture>&);
 
 	void replace_textures(const std::vector<texture>& textures);
 	void insert_texture(const texture& texture);

@@ -14,5 +14,5 @@ void main()
 
 	//we need to reverse gamma correct since skybox texture used is loaded in linear space
 	//and there is a post process gamma correction
-	FragColor.rgb = pow(FragColor.rgb, vec3(gamma));
+	//FragColor.rgb = pow(FragColor.rgb, vec3(gamma));
 }

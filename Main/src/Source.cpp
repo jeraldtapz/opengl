@@ -91,8 +91,8 @@ static const unsigned int ENV_MAP_RES = 512;
 static const unsigned int IRRADIANCE_RES = 32;
 static const unsigned int PREFILTER_RES = 128;
 static const unsigned int LUT_RES = 512;
-static const unsigned int WIDTH = 1280;
-static const unsigned int HEIGHT = 720;
+static const unsigned int WIDTH = 1920;
+static const unsigned int HEIGHT = 1080;
 static const unsigned int SAMPLES = 8;
 static const float RADIUS = 25.0f;
 
@@ -128,7 +128,7 @@ bool use_hdr = true;
 bool use_bloom = false;
 bool use_deferred = false;
 bool use_light_debug = false;
-bool use_pbr = false;
+bool use_pbr = true;
 bool use_ibl = true; // debug values
 
 color ambient_color;
@@ -149,6 +149,10 @@ std::vector<light*> lights;
 std::vector<game_object*> game_objects;
 std::vector<model> game_models;
 
+
+texture cerberus_color;
+texture cerberus_normal;
+texture cerberus_mask;
 
 FB shadow_fb = FB();
 FB point_shadow_fb = FB();
@@ -391,13 +395,22 @@ int main()  // NOLINT(bugprone-exception-escape)
 	const texture floor_normal_tex = texture(get_tex("pavement/pavement_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
 	const texture floor_mask_tex = texture(get_tex("pavement/pavement_mask.jpg"), TEX_T::mask, GL_UNSIGNED_BYTE, true); // floor
 
+	const texture gold_color = texture(get_tex("gold/gold_color_boosted.png"), TEX_T::diffuse, GL_RGB, GL_SRGB, GL_UNSIGNED_BYTE, true);
+	const texture gold_normal = texture(get_tex("gold/gold_normal.png"), TEX_T::normal, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, true);
+	const texture gold_mask = texture(get_tex("gold/gold_mask.png"), TEX_T::mask, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, true);
+
+	cerberus_color = texture("res/models/cerberus/Cerberus_A.tga", TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
+	//cerberus_color = texture("res/models/barrel/textures/1001_normal.png", TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
+	cerberus_normal = texture("res/models/cerberus/Cerberus_N.tga", TEX_T::normal, GL_UNSIGNED_BYTE, true);
+	cerberus_mask = texture("res/models/cerberus/Cerberus_Mask.tga", TEX_T::mask, GL_UNSIGNED_BYTE, true);
+
 	const texture canon_lens_mask_tex = texture("res/models/len_canon/textures/len_low_lambert2SG_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
 	const texture viking_shield_mask_tex = texture("res/models/viking_shield/textures/lambert1_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
 	
 
-	texture hdri_map = texture(get_tex("hdr/ballroom_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	texture hdri_map = texture(get_tex("hdr/Newport_Loft_Ref.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
 	texture brdf_lut_map = texture(TEX_T::color, LUT_RES, LUT_RES, GL_RG, GL_RG16F, GL_FLOAT, false);
 	
 	std::vector<std::string> skybox_texture_paths = {
@@ -456,7 +469,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	
 	#pragma region Meshes
 	
-	std::vector<texture> skybox_textures = { prefilter_map };
+	std::vector<texture> skybox_textures = { hdri_cube_map };
 	mesh skybox_cube_mesh = primitive::get_cube();
 	skybox_cube_mesh.replace_textures(skybox_textures);
 	skybox_cube_mesh.is_indexed = false;
@@ -495,6 +508,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	mesh raw_quad_mesh = primitive::get_quad();
 	raw_quad_mesh.is_indexed = false;
+
+	mesh sphere_mesh = primitive::get_sphere();
+	sphere_mesh.is_indexed = true;
 	#pragma endregion
 	
 	#pragma endregion
@@ -505,7 +521,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(destination_quad_mesh));
 	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
 
-	model viking_shield = model("res/models/viking_shield/scene.gltf", true);
+	model viking_shield = model("res/models/viking_shield/scene.gltf", false);
 	viking_shield.set_name("Viking Shield");
 
 	mesh* vk = viking_shield.get_mesh_ptr(0);
@@ -514,9 +530,18 @@ int main()  // NOLINT(bugprone-exception-escape)
 		vk->insert_texture(viking_shield_mask_tex);
 		vk->insert_texture(irradiance_map);
 	}
+
+	model cerberus = model("res/models/cerberus/Cerberus_LP.FBX", true);
+	cerberus.set_name("Cerberus");
+
+	mesh* cbrs = cerberus.get_mesh_ptr(0);
+	if(cbrs)
+	{
+		cbrs->replace_textures({});
+	}
 	
 	
-	model canon_lens = model("res/models/len_canon/scene.gltf", true);
+	model canon_lens = model("res/models/len_canon/scene.gltf", false);
 	canon_lens.set_name("Canon Lens");
 
 	mesh* cl = canon_lens.get_mesh_ptr(0);
@@ -539,9 +564,30 @@ int main()  // NOLINT(bugprone-exception-escape)
 	model raw_quad = model({ raw_quad_mesh });
 	raw_quad.set_name("Raw Quad");
 
+	model sphere_models[] = 
+	{
+		model({ sphere_mesh }),
+		model({ sphere_mesh }),
+		model({ sphere_mesh }),
+		model({ sphere_mesh }),
+	};
+	for (int i = 0; i < 4; i++)
+	{
+		sphere_models[i].set_name(std::string("Sphere ").append(std::to_string(i)));
+		game_models.push_back(sphere_models[i]);
+	}
+	sphere_models[0].get_mesh_ptr(0)->replace_textures({ gold_color, gold_normal, gold_mask , irradiance_map});
+	cerberus.get_mesh_ptr(0)->replace_textures({ cerberus_color, cerberus_mask, cerberus_normal, irradiance_map });
+	cerberus.get_transform()->set_scale(glm::vec3(0.025));
+	cerberus.get_transform()->set_rotation(glm::vec3(-90, 0, 0));
+	cerberus.get_transform()->set_position(glm::vec3(0, 1, 0));
+
 	game_models.push_back(floor_model);
-	game_models.push_back(canon_lens);
-	game_models.push_back(viking_shield);
+	game_models.push_back(cerberus);
+	//game_models.push_back(canon_lens);
+	//game_models.push_back(viking_shield);
+
+	
 
 	#pragma endregion
 
@@ -705,6 +751,8 @@ int main()  // NOLINT(bugprone-exception-escape)
 		point_lights[i].set_name(std::string("point_light_").append(std::to_string(i)));
 		game_objects.push_back(&point_lights[i]);
 		lights.push_back(&point_lights[i]);
+
+		sphere_models[i].get_transform()->set_position(point_light_positions[i]);
 	}
 
 	spotlight = spot_light();
@@ -1125,6 +1173,9 @@ void render_forward(const shader_program& program)
 	
 	for (auto && game_model : game_models)
 	{
+		if (!game_model.is_active)
+			continue;
+		
 		auto model_name = game_model.get_name();
 
 		tiling_and_offset t;
@@ -1318,8 +1369,6 @@ void render_debug_windows()
 
 	ImGui::Begin("Debug Textures");
 
-	const ImTextureID color_tex_id = reinterpret_cast<void*>(debug_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));  // NOLINT(misc-misplaced-const)
-	const ImTextureID depth_tex_id = reinterpret_cast<void*>(debug_fb.get_depth_attachment()); // NOLINT(misc-misplaced-const)
 	const ImTextureID bloom_color_tex_id = reinterpret_cast<void*>(bloom_fb.get_color_attachment(GL_COLOR_ATTACHMENT0)); // NOLINT(misc-misplaced-const)
 
 	const ImTextureID g_pos = reinterpret_cast<void*>(geometry_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
@@ -1330,26 +1379,15 @@ void render_debug_windows()
 
 	const ImTextureID ds_dir_light = reinterpret_cast<void*>(ds_light_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
 
-	const ImTextureID ds_light_depth = reinterpret_cast<void*>(ds_light_fb.get_depth_attachment());// NOLINT(misc-misplaced-const)
-
-	
 	const ImTextureID brdf_lut_id = reinterpret_cast<void*>(precompute_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
+
+	const ImTextureID cerberus_col_id = reinterpret_cast<void*>(cerberus_color.get_id());// NOLINT(misc-misplaced-const)
+	const ImTextureID cerberus_normal_id = reinterpret_cast<void*>(cerberus_normal.get_id());// NOLINT(misc-misplaced-const)
+	const ImTextureID cerberus_mask_id = reinterpret_cast<void*>(cerberus_mask.get_id());// NOLINT(misc-misplaced-const)
 
 	const float width = 400;
 	const float height = 225;
 
-	if (ImGui::TreeNode("Color"))
-	{
-		ImGui::Image(color_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
-		ImGui::TreePop();
-	}
-
-	if (ImGui::TreeNode("Depth"))
-	{
-		ImGui::Image(depth_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
-		ImGui::TreePop();
-	}
-	
 	if(ImGui::TreeNode("Bloom FB Color"))
 	{
 		ImGui::Image(bloom_color_tex_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
@@ -1359,12 +1397,6 @@ void render_debug_windows()
 	if (ImGui::TreeNode("Deferred Shading"))
 	{
 		ImGui::Image(ds_dir_light, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
-		ImGui::TreePop();
-	}
-
-	if (ImGui::TreeNode("Deferred Shading Depth"))
-	{
-		ImGui::Image(ds_light_depth, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 
@@ -1397,6 +1429,25 @@ void render_debug_windows()
 		ImGui::Image(brdf_lut_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
+
+	if (ImGui::TreeNode("Cerberus Color"))
+	{
+		ImGui::Image(cerberus_col_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Cerberus Normal"))
+	{
+		ImGui::Image(cerberus_normal_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Cerberus Mask"))
+	{
+		ImGui::Image(cerberus_mask_id, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
 	
 
 	ImGui::End();

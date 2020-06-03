@@ -225,7 +225,9 @@ mesh create_quad()
 
 mesh create_sphere()
 {
-	model sphere_model = model("res/models/sphere/sphere.obj", true);
+	
+	model sphere_model = model("res/models/sphere/scene.gltf", true);
+	sphere_model.get_mesh_ptr(0)->replace_textures({});
 	return *sphere_model.get_mesh_ptr(0);
 }
 
