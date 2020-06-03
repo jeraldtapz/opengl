@@ -93,7 +93,11 @@ uniform float useNormalMaps;
 uniform float useIBL;
 uniform float useParallax; //uniforms
 
+uniform samplerCube prefilter;
+uniform sampler2D brdfLut;
+
 const float PI = 3.14159265359;
+const float MAX_REFLECTION_LOD = 4.0;
 
 void main()
 {
@@ -103,6 +107,9 @@ void main()
 	normal = normalize(normal);
 
 	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
+
+	
+
 
 	vec3 albedo = texture(mat.diffuseTexture0, coord).rgb;
 	vec3 mask = texture(mat.maskTexture0, coord).rgb;
@@ -240,9 +247,17 @@ vec3 CalculateAmbientDiffuse(samplerCube irradianceMap, vec3 normal, vec3 fragTo
 {
 	vec3 kS = FresnelSchlickRoughness(max(dot(normal, fragToView), 0.0), f0, roughness);
 	vec3 kD = 1.0 - kS;
-	vec3 irradiance =texture(irradianceMap, fragToView).rgb;
+
+	vec3 irradiance =texture(irradianceMap, normal).rgb;
 	vec3 diffuse = irradiance * albedo;
-	vec3 ambient = kD * diffuse * ao;
+
+	vec3 refl = reflect(-fragToView, normal);
+
+	vec3 prefilteredColor = textureLod(prefilter, refl, roughness * MAX_REFLECTION_LOD).rgb;
+	vec2 envBRDF = texture(brdfLut, vec2(max(dot(normal, fragToView), 0.0), roughness)).rg;
+	vec3 specular = prefilteredColor * (kS * envBRDF.x + envBRDF.y);
+
+	vec3 ambient = ( kD * diffuse  + specular ) * ao;
 
 	return ambient;
 }

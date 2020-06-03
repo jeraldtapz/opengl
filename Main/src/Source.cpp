@@ -90,6 +90,7 @@ static const unsigned int SHADOW_RESOLUTION = 2048;
 static const unsigned int ENV_MAP_RES = 512;
 static const unsigned int IRRADIANCE_RES = 32;
 static const unsigned int PREFILTER_RES = 128;
+static const unsigned int LUT_RES = 512;
 static const unsigned int WIDTH = 1280;
 static const unsigned int HEIGHT = 720;
 static const unsigned int SAMPLES = 8;
@@ -337,10 +338,14 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader eq_to_cube_pixel = shader("pbr/equirectangular_to_cube_p", GL_FRAGMENT_SHADER);
 
 	shader irradiance_vertex = shader("pbr/irradiance_v", GL_VERTEX_SHADER);
-	shader irradiance_pixel = shader("pbr/irradiance_2_p", GL_FRAGMENT_SHADER);
+	shader irradiance_pixel = shader("pbr/irradiance_p", GL_FRAGMENT_SHADER);
 
 	shader prefilter_vertex = shader("pbr/prefilter_v", GL_VERTEX_SHADER);
 	shader prefilter_pixel = shader("pbr/prefilter_p", GL_FRAGMENT_SHADER);
+
+	shader brdf_lut_vertex = shader("pbr/brdf_lut_v", GL_VERTEX_SHADER);
+	shader brdf_lut_pixel = shader("pbr/brdf_lut_p", GL_FRAGMENT_SHADER);
+	//shader brdf_lut_pixel = shader("src/testing/2.2.1.brdf.fs", GL_FRAGMENT_SHADER, false);
 
 	// ************** shader programs **************
 	shader_program basic_shader_program = shader_program(&basic_shader_vertex, &basic_shader_pixel);
@@ -369,6 +374,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	shader_program eq_to_cube_shader_program = shader_program(&eq_to_cube_vertex, &eq_to_cube_pixel);
 	shader_program irradiance_diffuse_shader_program = shader_program(&irradiance_vertex, &irradiance_pixel);
 	shader_program prefilter_shader_program = shader_program(&prefilter_vertex, &prefilter_pixel);
+	shader_program brdf_lut_shader_program = shader_program(&brdf_lut_vertex, &brdf_lut_pixel);
 	
 	#pragma endregion
 
@@ -383,14 +389,17 @@ int main()  // NOLINT(bugprone-exception-escape)
 	
 	const texture floor_tex = texture(get_tex("pavement/pavement_color.jpg"), TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
 	const texture floor_normal_tex = texture(get_tex("pavement/pavement_normal.jpg"), TEX_T::normal, GL_UNSIGNED_BYTE, true);
-	const texture floor_mask_tex = texture(get_tex("pavement/pavement_mask.jpg"), TEX_T::mask, GL_UNSIGNED_BYTE, true);
+	const texture floor_mask_tex = texture(get_tex("pavement/pavement_mask.jpg"), TEX_T::mask, GL_UNSIGNED_BYTE, true); // floor
 
 	const texture canon_lens_mask_tex = texture("res/models/len_canon/textures/len_low_lambert2SG_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
 	const texture viking_shield_mask_tex = texture("res/models/viking_shield/textures/lambert1_metallicRoughness.png", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
-	texture hdri_map = texture(get_tex("hdr/ballroom_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	
 
+	texture hdri_map = texture(get_tex("hdr/ballroom_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	texture brdf_lut_map = texture(TEX_T::color, LUT_RES, LUT_RES, GL_RG, GL_RG16F, GL_FLOAT, false);
+	
 	std::vector<std::string> skybox_texture_paths = {
 		"res/textures/skybox_5/px.png",
 		"res/textures/skybox_5/nx.png" ,
@@ -403,7 +412,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	texture hdri_cube_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, ENV_MAP_RES, false , GL_LINEAR_MIPMAP_LINEAR);
 	texture irradiance_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, IRRADIANCE_RES, false, GL_LINEAR);
-	texture prefilter_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, PREFILTER_RES, true, GL_LINEAR_MIPMAP_LINEAR);
+	texture prefilter_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, PREFILTER_RES, true, GL_LINEAR_MIPMAP_LINEAR); // IBL
 
 	#pragma endregion
 
@@ -483,6 +492,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	mesh debug_eq_to_cube_mesh = primitive::get_cube();
 	debug_eq_to_cube_mesh.is_indexed = false;
+
+	mesh raw_quad_mesh = primitive::get_quad();
+	raw_quad_mesh.is_indexed = false;
 	#pragma endregion
 	
 	#pragma endregion
@@ -523,6 +535,9 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	model debug_cube = model({ debug_eq_to_cube_mesh });
 	debug_cube.set_name("Debug Cube");
+
+	model raw_quad = model({ raw_quad_mesh });
+	raw_quad.set_name("Raw Quad");
 
 	game_models.push_back(floor_model);
 	game_models.push_back(canon_lens);
@@ -799,6 +814,15 @@ int main()  // NOLINT(bugprone-exception-escape)
 	}
 	// prefilter env map
 
+
+	glViewport(0, 0, LUT_RES, LUT_RES);
+	precompute_rb.reallocate(GL_DEPTH_COMPONENT24, LUT_RES, LUT_RES);
+	precompute_fb.attach_texture_2d_color(brdf_lut_map, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0);
+
+	brdf_lut_shader_program.use();
+	FB::clear_frame();
+	raw_quad.draw(brdf_lut_shader_program);
+	
 	
 	FB::unbind();
 	glViewport(0, 0, WIDTH, HEIGHT);
@@ -833,6 +857,15 @@ int main()  // NOLINT(bugprone-exception-escape)
 		}
 		else
 		{
+			//ibl
+			pbr_forward_shader_program.use();
+			pbr_forward_shader_program.set_int("prefilter", 10);
+			texture::activate(GL_TEXTURE10);
+			prefilter_map.bind();
+
+			pbr_forward_shader_program.set_int("brdfLut", 11);
+			texture::activate(GL_TEXTURE11);
+			brdf_lut_map.bind();
 			render_forward(use_pbr ? pbr_forward_shader_program : basic_shader_program);
 			render_skybox(skybox_renderer, skybox_shader_program);
 			render_debug_point_lights(ds_point_light_sphere_model, debug_light_shader_program);
@@ -913,6 +946,8 @@ void render_model(model &m, const shader_program &program)
 	program.set_float("useParallax", use_parallax ? 1 : 0);
 	program.set_float("useIBL", use_ibl ? 1 : 0);
 	program.set_vec3("viewPos", cam.get_transform()->position());
+
+	
 	
 	send_point_lights_to_shader(program);
 	send_dir_light_to_shader(program);
@@ -1297,6 +1332,9 @@ void render_debug_windows()
 
 	const ImTextureID ds_light_depth = reinterpret_cast<void*>(ds_light_fb.get_depth_attachment());// NOLINT(misc-misplaced-const)
 
+	
+	const ImTextureID brdf_lut_id = reinterpret_cast<void*>(precompute_fb.get_color_attachment(GL_COLOR_ATTACHMENT0));// NOLINT(misc-misplaced-const)
+
 	const float width = 400;
 	const float height = 225;
 
@@ -1351,6 +1389,12 @@ void render_debug_windows()
 	if (ImGui::TreeNode("G Depth"))
 	{
 		ImGui::Image(g_depth, ImVec2(width, height), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::TreePop();
+	}
+
+	if(ImGui::TreeNode("BRDF LUT Map"))
+	{
+		ImGui::Image(brdf_lut_id, ImVec2(256, 256), ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.0f, 1.0f, 1.0f, 1.0f), ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::TreePop();
 	}
 	

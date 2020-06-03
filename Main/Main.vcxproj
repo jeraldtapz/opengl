@@ -211,6 +211,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\pixel\light_debug_p.glsl" />
     <None Include="res\shaders\pixel\light_p.glsl" />
     <None Include="res\shaders\pixel\outline_p.glsl" />
+    <None Include="res\shaders\pixel\pbr\brdf_lut_p.glsl" />
     <None Include="res\shaders\pixel\pbr\equirectangular_to_cube_p.glsl" />
     <None Include="res\shaders\pixel\pbr\irradiance_p.glsl" />
     <None Include="res\shaders\pixel\pbr\pbr_forward_p.glsl" />
@@ -230,6 +231,7 @@ xcopy "$(ProjectDir)res\*.*" "$(OutDir)res" /E /Y /I</Command>
     <None Include="res\shaders\vertex\ds_point_light_v.glsl" />
     <None Include="res\shaders\vertex\light_v.glsl" />
     <None Include="res\shaders\vertex\outline_v.glsl" />
+    <None Include="res\shaders\vertex\pbr\brdf_lut_v.glsl" />
     <None Include="res\shaders\vertex\pbr\equirectangular_to_cube_v.glsl" />
     <None Include="res\shaders\vertex\pbr\irradiance_v.glsl" />
     <None Include="res\shaders\vertex\pbr\pbr_forward_v.glsl" />

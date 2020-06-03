@@ -194,6 +194,8 @@
     <None Include="src\testing\2.2.1.background.vs" />
     <None Include="src\testing\2.2.1.pbr.fs" />
     <None Include="src\testing\2.2.1.pbr.vs" />
+    <None Include="res\shaders\vertex\pbr\brdf_lut_v.glsl" />
+    <None Include="res\shaders\pixel\pbr\brdf_lut_p.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\headers\rendering\shader.h">

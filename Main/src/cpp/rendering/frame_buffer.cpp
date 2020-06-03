@@ -34,7 +34,12 @@ void frame_buffer::attach_texture_2d_color(texture& tex, const GLenum attachment
 	}
 	glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, target, tex.get_id(), mip_level);
 
-	color_attachments.insert(std::pair<GLenum, texture*>(attachment, &tex));
+	const std::map<unsigned, texture*>::iterator it = color_attachments.find(attachment);
+
+	if (it != color_attachments.end())
+		it->second = &tex;
+	else
+		color_attachments.insert(std::pair<GLenum, texture*>(attachment, &tex));
 }
 
 void frame_buffer::attach_texture_2d_depth(texture& tex, const GLenum attachment)
