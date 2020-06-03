@@ -103,9 +103,10 @@ void model::load_model(const std::string& path)
 
 void model::process_node(aiNode* node, const aiScene* scene)
 {
+	std::cout << "Processing node " << node->mName.C_Str() << " with "<< node->mNumMeshes << " meshes" << std::endl;
+
 	for (unsigned int i = 0; i < node->mNumMeshes; i++)
 	{
-		std::cout << "Processing node " << node->mName.C_Str() << std::endl;
 		//node->mMeshes contains indices of meshes on the global meshes collection scene->mMeshes
 		aiMesh* ai_mesh = scene->mMeshes[node->mMeshes[i]];
 

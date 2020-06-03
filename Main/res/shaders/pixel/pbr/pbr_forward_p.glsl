@@ -108,14 +108,11 @@ void main()
 
 	vec3 fragToView = normalize(ViewPosTangent - FragPosTangent);
 
-	
-
 
 	vec3 albedo = texture(mat.diffuseTexture0, coord).rgb;
 	vec3 mask = texture(mat.maskTexture0, coord).rgb;
 	float metallic = mask.r;
 	float roughness = mask.g;
-	roughness = clamp(roughness, 0.01, 1);
 	float ao = mask.b;
 	
 	vec3 f0 = vec3(0.04); // 0.04 is normally accepted for most dielectrics
@@ -129,7 +126,7 @@ void main()
 
 	vec3 dirLightContrib = CalculateDirectionalLight(DirLightTangent,  normal, fragToView, albedo, metallic, roughness, f0);
 	vec3 spotLightContrib = CalculateSpotLightContrib(SpotLightTangent, normal, fragToView, albedo, metallic, roughness, f0);
-	float dirShadow = CalculateDirectionalShadow(normal);
+	float dirShadow = CalculateDirectionalShadow(normal) * useShadow;
 
 	dirLightContrib *= (1 - dirShadow);
 
@@ -137,7 +134,7 @@ void main()
 
 	spotLightContrib *= isFlashlightOn;
 
-	vec3 ambient = CalculateAmbientDiffuse(mat.diffIrradianceTexture0, normal, fragToView, albedo, f0, ao, roughness) * useIBL;
+	vec3 ambient = CalculateAmbientDiffuse(mat.diffIrradianceTexture0, normal, fragToView, albedo, f0, ao, roughness) * useIBL * 4;
 
 	FragColor = vec4(point_light_contrib + dirLightContrib + ambient , 1.0);
 }
@@ -299,7 +296,7 @@ float GeometrySmith(vec3 normal, vec3 viewVector, vec3 lightVector, float roughn
 
 vec3 FresnelSchlick(float cosTheta, vec3 f0)
 {
-	return f0 + (1 - f0) * pow(1 - cosTheta, 5.0);
+	return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
 }
 
 vec3 FresnelSchlickRoughness(float cosTheta, vec3 f0, float roughness)
@@ -318,7 +315,7 @@ float CalculateDirectionalShadow(vec3 normal)
 	float currentDepth = lightSpacePosProj.z;
 	vec3 fragToLight = normalize(-DirLightTangent.lightDir);
 
-	float bias = max(0.0005 * (1.0 - dot(normal, fragToLight)), 0.00005);
+	float bias = max(0.05 * (1.0 - dot(normal, fragToLight)), 0.005);
 
 	vec2 texelSize = 1.0/textureSize(mat.shadowMap0, 0);
 	const int halfKernelWidth = 2;

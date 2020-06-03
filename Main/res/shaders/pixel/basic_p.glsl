@@ -100,8 +100,15 @@ void main()
 {
 	vec4 diffColor = texture(mat.diffuseTexture0, GetTexCoords(1.0));
 
-	float pointShadow = CalculatePointShadow() * useShadow;
-	float dirShadow = CalculateDirectionalShadow() * useShadow;
+	float pointShadow = 0.0;
+	float dirShadow = 0.0;
+
+	if(useShadow) // static branch
+	{
+		pointShadow = CalculatePointShadow();
+		dirShadow = CalculateDirectionalShadow();
+	}
+	
 
 	vec3 pointLightContrib;
 
@@ -109,11 +116,13 @@ void main()
 	{
 		pointLightContrib += (1 - pointShadow * when_lt(i, 1)) * CalculatePointLight(PointLightsTangent[i]);
 	}
-	vec3 dirLightContrib = CalculateDirectionalLight();
+
+
+	vec3 dirLightContrib = CalculateDirectionalLight() * (1 - dirShadow);
 	vec3 spotLightContrib = CalculateSpotLightContrib(SpotLightTangent) * isFlashlightOn;
 	vec3 ambientContrib = diffColor.rgb * ambientColor;
 
-	FragColor =  vec4(((1 - dirShadow) * dirLightContrib) + pointLightContrib + spotLightContrib + ambientContrib, diffColor.a);
+	FragColor =  vec4((dirLightContrib) + pointLightContrib + spotLightContrib + ambientContrib, diffColor.a);
 }
 
 vec3 CalculateDirectionalLight()

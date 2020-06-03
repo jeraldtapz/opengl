@@ -91,8 +91,8 @@ static const unsigned int ENV_MAP_RES = 512;
 static const unsigned int IRRADIANCE_RES = 32;
 static const unsigned int PREFILTER_RES = 128;
 static const unsigned int LUT_RES = 512;
-static const unsigned int WIDTH = 1920;
-static const unsigned int HEIGHT = 1080;
+static const unsigned int WIDTH = 1280;
+static const unsigned int HEIGHT = 720;
 static const unsigned int SAMPLES = 8;
 static const float RADIUS = 25.0f;
 
@@ -120,7 +120,7 @@ bool is_open;
 float hdr_exposure = 1.0f;
 float brightness_threshold = 2.0f;
 float skybox_lod = 0;
-bool use_shadow = true;
+bool use_shadow = false;
 bool use_normal_maps = true;
 bool use_parallax = false;
 bool use_gamma_correction = true;
@@ -224,7 +224,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Main", nullptr, nullptr);
-
+	
 	if (!window)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
@@ -400,7 +400,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 	const texture gold_mask = texture(get_tex("gold/gold_mask.png"), TEX_T::mask, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, true);
 
 	cerberus_color = texture("res/models/cerberus/Cerberus_A.tga", TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
-	//cerberus_color = texture("res/models/barrel/textures/1001_normal.png", TEX_T::diffuse, GL_UNSIGNED_BYTE, true);
 	cerberus_normal = texture("res/models/cerberus/Cerberus_N.tga", TEX_T::normal, GL_UNSIGNED_BYTE, true);
 	cerberus_mask = texture("res/models/cerberus/Cerberus_Mask.tga", TEX_T::mask, GL_UNSIGNED_BYTE, true);
 
@@ -410,18 +409,18 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	
 
-	texture hdri_map = texture(get_tex("hdr/Newport_Loft_Ref.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
+	texture hdri_map = texture(get_tex("hdr/fireplace_4k.hdr"), TEX_T::hdr, GL_RGB, GL_RGB16F, GL_FLOAT, false);
 	texture brdf_lut_map = texture(TEX_T::color, LUT_RES, LUT_RES, GL_RG, GL_RG16F, GL_FLOAT, false);
 	
-	std::vector<std::string> skybox_texture_paths = {
-		"res/textures/skybox_5/px.png",
-		"res/textures/skybox_5/nx.png" ,
-		"res/textures/skybox_5/ny.png",
-		"res/textures/skybox_5/py.png",
-		"res/textures/skybox_5/pz.png",
-		"res/textures/skybox_5/nz.png"
-	};
-	const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2048, false, GL_LINEAR); // textures
+	//std::vector<std::string> skybox_texture_paths = {
+	//	"res/textures/skybox_5/px.png",
+	//	"res/textures/skybox_5/nx.png" ,
+	//	"res/textures/skybox_5/ny.png",
+	//	"res/textures/skybox_5/py.png",
+	//	"res/textures/skybox_5/pz.png",
+	//	"res/textures/skybox_5/nz.png"
+	//};
+	//const texture skybox_tex = texture(skybox_texture_paths, TEX_T::cube, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 2048, false, GL_LINEAR); // textures
 
 	texture hdri_cube_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, ENV_MAP_RES, false , GL_LINEAR_MIPMAP_LINEAR);
 	texture irradiance_map = texture({}, TEX_T::cube, GL_RGB16F, GL_RGB, GL_FLOAT, IRRADIANCE_RES, false, GL_LINEAR);
@@ -521,7 +520,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	renderer screen_space_quad_renderer = renderer(std::make_shared<mesh>(destination_quad_mesh));
 	renderer screen_space_raw_quad_renderer = renderer(std::make_shared<mesh>(bloom_quad_mesh));
 
-	model viking_shield = model("res/models/viking_shield/scene.gltf", false);
+	model viking_shield = model("res/models/viking_shield/scene.gltf", true);
 	viking_shield.set_name("Viking Shield");
 
 	mesh* vk = viking_shield.get_mesh_ptr(0);
@@ -574,7 +573,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	for (int i = 0; i < 4; i++)
 	{
 		sphere_models[i].set_name(std::string("Sphere ").append(std::to_string(i)));
-		game_models.push_back(sphere_models[i]);
+		//game_models.push_back(sphere_models[i]);
 	}
 	sphere_models[0].get_mesh_ptr(0)->replace_textures({ gold_color, gold_normal, gold_mask , irradiance_map});
 	cerberus.get_mesh_ptr(0)->replace_textures({ cerberus_color, cerberus_mask, cerberus_normal, irradiance_map });
@@ -585,7 +584,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 	game_models.push_back(floor_model);
 	game_models.push_back(cerberus);
 	//game_models.push_back(canon_lens);
-	//game_models.push_back(viking_shield);
+	game_models.push_back(viking_shield);
 
 	
 
@@ -602,15 +601,6 @@ int main()  // NOLINT(bugprone-exception-escape)
 	std::cout << "HDR to Cube Map Frame Buffer " << FB::validate() << std::endl;
 	FB::unbind();
 
-	/*conv_fb.generate();
-	conv_fb.bind();
-
-	render_buffer conv_rb = render_buffer(GL_DEPTH_COMPONENT24, IBL_MAP_RES, IBL_MAP_RES);
-	conv_fb.attach_render_buffer(conv_rb, GL_DEPTH_ATTACHMENT);
-
-	std::cout << "Convolution Frame Buffer " << FB::validate() << std::endl;
-	FB::unbind();*/
-	
 	geometry_fb.generate();
 	geometry_fb.bind();
 	geometry_fb.attach_texture_2d_color(geometry_pos_tex, GL_COLOR_ATTACHMENT0);
@@ -772,7 +762,7 @@ int main()  // NOLINT(bugprone-exception-escape)
 
 	viking_shield.get_transform()->set_position(glm::vec3(4, 2, 4));
 	viking_shield.get_transform()->set_rotation(glm::vec3(90, 0, 0));
-	viking_shield.get_transform()->set_scale(glm::vec3(0.1f));
+	viking_shield.get_transform()->set_scale(glm::vec3(0.25f));
 
 	#pragma endregion
 
@@ -1222,8 +1212,10 @@ void render_directional_shadow_map(std::vector<model>& models, const shader_prog
 
 	glCullFace(GL_FRONT);
 
-	for (auto value : models)
+	for (auto &value : models)
 	{
+		if (!value.is_active)
+			continue;
 		program.set_model(value.get_transform()->get_model_matrix());
 		value.draw_shadow(program);
 	}
@@ -1236,8 +1228,13 @@ void render_directional_shadow_map(std::vector<model>& models, const shader_prog
 
 }
 
+
+static std::vector<glm::mat4> shadow_view_matrices;
 void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_program &program)
 {
+	if (!point_lights[0].is_active)
+		return;
+	
 	glViewport(0, 0, SHADOW_RESOLUTION, SHADOW_RESOLUTION);
 
 	point_shadow_fb.bind();
@@ -1247,7 +1244,8 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, RADIUS);
 
 	const glm::vec3 pos = point_lights[0].get_transform()->position();
-	std::vector<glm::mat4> shadow_view_matrices;
+
+	shadow_view_matrices.clear();
 	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[0], capture_up_directions[0]));
 	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[1], capture_up_directions[1]));
 	shadow_view_matrices.push_back(glm::lookAt(pos, pos + capture_forward_directions[2], capture_up_directions[2]));
@@ -1268,6 +1266,8 @@ void render_omnidirectional_shadow_map(std::vector<model>& models, const shader_
 	glCullFace(GL_FRONT);
 	for (std::vector<model>::value_type& value : models)
 	{
+		if (!value.is_active)
+			continue;
 		program.set_model(value.get_transform()->get_model_matrix());
 		value.draw_shadow(program);
 		
@@ -2000,6 +2000,9 @@ void mouse_callback(GLFWwindow* window, const double x_pos, const double y_pos)
 
 void scroll_callback(GLFWwindow* window, const double x_offset, const double y_offset)
 {
+	if (cursor_mode == GLFW_CURSOR_NORMAL)
+		return;
+	
 	float fov = cam.fov;
 	
 	if (fov >= 25.0f && fov <= 45.0f)

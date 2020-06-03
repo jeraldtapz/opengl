@@ -51,7 +51,7 @@ void shadow_renderer::draw(const shader_program& program) const
 
 	glCullFace(mesh_ptr->cull_face);
 
-	program.use();
+	/*program.use();
 
 	unsigned int diffuse_number = -1;
 	unsigned int specular_number = -1;
@@ -109,7 +109,7 @@ void shadow_renderer::draw(const shader_program& program) const
 		program.set_int(setting_name.append(tex_type_str).append(number), i);
 	}
 
-	texture::activate(GL_TEXTURE0);
+	texture::activate(GL_TEXTURE0);*/
 
 	if (mesh_ptr->is_indexed)
 		draw_with_indices();

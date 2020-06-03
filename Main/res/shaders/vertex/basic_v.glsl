@@ -72,10 +72,10 @@ void main()
 	gl_Position = projection * view * model * vec4(aPos, 1.0); // fragment position in clip space
 
 	//use it here so that pointLights will not be automatically removed by compiler
-	for(int i = 0; i < 4; i++)
-	{
-		gl_Position += vec4(hack * pointLights[i].lightPos, 0.0);
-	}
+//	for(int i = 0; i < 4; i++)
+//	{
+//		gl_Position += vec4(hack * pointLights[i].lightPos, 0.0);
+//	}
 	TexCoord = aTexCoord;
 
 	vec3 T = normalize(vec3(model * vec4(aTangent, 0.0)));
